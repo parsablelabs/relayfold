@@ -14,20 +14,9 @@ tasks:
         method: "GET"
         headers:
           Accept: "application/json"
-          X-Client-Version: "1"
-    output_schema:
-      type: object
-      required: [status, headers, body]
-      properties:
-        status:
-          type: integer
-        headers:
-          type: object
-          additionalProperties:
-            type: string
-        body:
-          type: object
-    required_credentials: []
+          Authorization: "Bearer ${credentials.api_token}"
+    required_credentials:
+      - api_token
 ```
 
 ## When to use API call tasks
@@ -47,9 +36,36 @@ An API call supports:
 
 - `url`: the request URL
 - `method`: the HTTP method
-- `headers`: an optional map of literal request-header names to string values
+- `headers`: an optional map of request-header names to string values. Values support [credential interpolation](#credential-interpolation).
 
-Omitting `headers` sends no workflow-configured headers. RelayFold does not interpolate credentials into header values. Request bodies, query-parameter construction, request signing, and task-specific retry behavior are not part of API call tasks; use a Function task when you need those features.
+Omitting `headers` sends no workflow-configured headers. Request bodies, query-parameter construction, request signing, and task-specific retry behavior are not part of API call tasks; use a Function task when you need those features.
+
+## Credential interpolation
+
+API call tasks support credential interpolation in header values using the `${credentials.<name>}` syntax. This allows authenticated requests without storing secrets in the workflow definition.
+
+```yaml
+tasks:
+  - id: fetch-items
+    kind:
+      apiCall:
+        url: "https://api.example.com/items"
+        method: "GET"
+        headers:
+          Authorization: "Bearer ${credentials.api_token}"
+    required_credentials:
+      - api_token
+```
+
+### Interpolation rules
+
+- **Syntax**: Expressions use `${credentials.<name>}`. The credential name must start with a letter or underscore and contain only letters, digits, and underscores.
+- **Namespacing**: Only the `credentials` namespace is supported.
+- **Escaping**: Use `$${` to produce a literal `${` in a header value. For example, `$${credentials.api_token}` becomes `${credentials.api_token}` without being resolved.
+- **Validation**: Every referenced credential must be declared in the task's `required_credentials` list.
+- **Failure**: The task fails if a referenced credential is undeclared, unavailable, or if the expression is malformed.
+- **Single-pass**: Text inserted from a credential is not interpreted again.
+- **Security**: Resolved header values and raw credentials are never persisted or included in logs or error messages.
 
 ## Response contract
 

@@ -2,20 +2,36 @@ import type { JsonValue, TaskExecutor, TaskExecutionResult } from '../../core/po
 import type { TaskExecutionPayload } from '../../core/models/TaskDef.js';
 import type { CredentialsPort } from '../../core/ports/CredentialsPort.js';
 import { logger } from '../../utils/logger.js';
+import { CredentialResolver } from '../../core/CredentialResolver.js';
 
 export class ApiCallExecutor implements TaskExecutor {
-    async execute(payload: TaskExecutionPayload, _credentialsPort: CredentialsPort): Promise<TaskExecutionResult> {
+    async execute(payload: TaskExecutionPayload, credentialsPort: CredentialsPort): Promise<TaskExecutionResult> {
         if (!('apiCall' in payload.task.kind)) {
             return { status: 'error', message: 'ApiCallExecutor received a non-ApiCall task' };
         }
 
         const apiCallDef = payload.task.kind.apiCall;
+        
+        let resolvedHeaders: Record<string, string>;
+        try {
+            const resolver = new CredentialResolver(credentialsPort);
+            resolvedHeaders = await resolver.resolveHeaders(
+                apiCallDef.headers ?? {},
+                payload.task.required_credentials
+            );
+        } catch (error) {
+            return {
+                status: 'error',
+                message: `Failed to resolve credentials in headers: ${describeError(error)}`,
+            };
+        }
+
         logger.info(`[ApiCallExecutor] Calling API: ${apiCallDef.method} ${apiCallDef.url}`);
 
         try {
             const response = await fetch(apiCallDef.url, {
                 method: apiCallDef.method,
-                headers: apiCallDef.headers ?? {},
+                headers: resolvedHeaders,
             });
 
             if (!response.ok) {

@@ -22,6 +22,8 @@ The custom homepage lives at `/`. Starlight documentation pages live under `/doc
 
 ## Development
 
+The website requires Node.js 22.12.0 or newer.
+
 Install dependencies:
 
 ```bash

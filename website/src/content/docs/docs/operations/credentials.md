@@ -58,3 +58,18 @@ persistent Pi or OAuth authentication.
 ## Missing credentials
 
 If any required credential is missing, the task fails before its main work runs. This keeps credential failures explicit and avoids starting work that cannot complete.
+
+## Usage in API Calls
+
+In API call tasks, credentials can be interpolated into header values using the `${credentials.<name>}` syntax.
+
+```yaml
+kind:
+  apiCall:
+    headers:
+      Authorization: "Bearer ${credentials.api_token}"
+required_credentials:
+  - api_token
+```
+
+See [API Call Tasks](/docs/concepts/tasks/api-calls) for more details.
