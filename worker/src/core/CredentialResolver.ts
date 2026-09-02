@@ -1,9 +1,5 @@
 import type { CredentialsPort } from './ports/CredentialsPort.js';
 
-export interface InterpolationOptions {
-  requiredCredentials: string[];
-}
-
 export class CredentialResolver {
   private static readonly INTERPOLATION_REGEX = /\$\$?\{([^}]+)\}/g;
   private static readonly CREDENTIAL_PATTERN = /^credentials\.([a-zA-Z_][a-zA-Z0-9_]*)$/;
@@ -15,12 +11,12 @@ export class CredentialResolver {
    */
   async resolveHeaders(
     headers: Record<string, string>,
-    options: InterpolationOptions
+    requiredCredentials: readonly string[]
   ): Promise<Record<string, string>> {
     const resolvedHeaders: Record<string, string> = {};
 
     for (const [name, value] of Object.entries(headers)) {
-      resolvedHeaders[name] = await this.resolveString(value, options);
+      resolvedHeaders[name] = await this.resolveString(value, requiredCredentials);
     }
 
     return resolvedHeaders;
@@ -31,7 +27,7 @@ export class CredentialResolver {
    */
   async resolveString(
     value: string,
-    options: InterpolationOptions
+    requiredCredentials: readonly string[]
   ): Promise<string> {
     const parts: string[] = [];
     let i = 0;
@@ -45,7 +41,7 @@ export class CredentialResolver {
           throw new Error(`Malformed interpolation expression in header value: unterminated '\${'`);
         }
         const expression = value.substring(i + 2, closingBraceIndex);
-        const resolvedValue = await this.resolveExpression(expression, options);
+        const resolvedValue = await this.resolveExpression(expression, requiredCredentials);
         parts.push(resolvedValue);
         i = closingBraceIndex + 1;
       } else {
@@ -58,7 +54,7 @@ export class CredentialResolver {
 
   private async resolveExpression(
     expression: string,
-    options: InterpolationOptions
+    requiredCredentials: readonly string[]
   ): Promise<string> {
     const match = expression.match(/^credentials\.([a-zA-Z_][a-zA-Z0-9_]*)$/);
     if (!match) {
@@ -75,7 +71,7 @@ export class CredentialResolver {
 
     const credentialName = match[1]!;
 
-    if (!options.requiredCredentials.includes(credentialName)) {
+    if (!requiredCredentials.includes(credentialName)) {
       throw new Error(`Credential '${credentialName}' is referenced but not declared in required_credentials`);
     }
 

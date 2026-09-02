@@ -17,7 +17,7 @@ export class ApiCallExecutor implements TaskExecutor {
             const resolver = new CredentialResolver(credentialsPort);
             resolvedHeaders = await resolver.resolveHeaders(
                 apiCallDef.headers ?? {},
-                { requiredCredentials: payload.task.required_credentials }
+                payload.task.required_credentials
             );
         } catch (error) {
             return {
