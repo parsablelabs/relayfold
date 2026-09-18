@@ -18,6 +18,9 @@ A workflow instance moves through explicit lifecycle states as RelayFold schedul
 
 Task status uses a similar set: `Pending`, `Running`, `InputNeeded`, `Completed`, and `Failed`.
 
+For overlap checks, workflow instances in `Pending`, `Running`, `Paused`, or
+`InputNeeded` are active. `Completed` and `Failed` instances are terminal.
+
 ## Current status and events
 
 Use the current-status endpoint for the latest workflow view:

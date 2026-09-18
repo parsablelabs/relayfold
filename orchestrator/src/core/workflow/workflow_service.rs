@@ -122,6 +122,34 @@ impl WorkflowService {
         Ok(instance_id)
     }
 
+    pub async fn has_active_workflow_instance_for_def(
+        &self,
+        namespace: &Namespace,
+        workflow_def_id: &str,
+    ) -> anyhow::Result<bool> {
+        let page = self
+            .storage
+            .list_workflow_info(
+                Some(namespace),
+                WorkflowInfoPageRequest {
+                    limit: 1,
+                    cursor: None,
+                },
+                vec![
+                    WorkflowInstanceFilter::WorkflowDefId(workflow_def_id.to_string()),
+                    WorkflowInstanceFilter::Statuses(vec![
+                        WorkflowStatus::Pending,
+                        WorkflowStatus::Running,
+                        WorkflowStatus::Paused,
+                        WorkflowStatus::InputNeeded,
+                    ]),
+                ],
+            )
+            .await?;
+
+        Ok(!page.items.is_empty())
+    }
+
     pub async fn list_workflows(
         &self,
         namespace: &Namespace,
@@ -1402,6 +1430,82 @@ mod tests {
                 .to_string()
                 .contains("workflow definition missing not found")
         );
+    }
+
+    #[tokio::test]
+    async fn active_workflow_instance_lookup_matches_only_nonterminal_instances_for_definition() {
+        let namespace = crate::core::namespace::test_namespace();
+
+        for status in [
+            WorkflowStatus::Pending,
+            WorkflowStatus::Running,
+            WorkflowStatus::Paused,
+            WorkflowStatus::InputNeeded,
+        ] {
+            let storage = Arc::new(MemoryStorage::new());
+            let service = WorkflowService::new(storage.clone());
+            storage
+                .save_workflow_instance(
+                    &namespace,
+                    0,
+                    vec![],
+                    WorkflowInstance {
+                        id: format!("{status:?}-workflow"),
+                        workflow_def_id: "scheduled-workflow".to_string(),
+                        version: 0,
+                        status,
+                        trigger_input: None,
+                        pinned_worker_host: None,
+                        tasks: HashMap::new(),
+                        verifier_states: HashMap::new(),
+                    },
+                )
+                .await
+                .unwrap();
+
+            assert!(
+                service
+                    .has_active_workflow_instance_for_def(&namespace, "scheduled-workflow")
+                    .await
+                    .unwrap()
+            );
+            assert!(
+                !service
+                    .has_active_workflow_instance_for_def(&namespace, "other-workflow")
+                    .await
+                    .unwrap()
+            );
+        }
+
+        for status in [WorkflowStatus::Completed, WorkflowStatus::Failed] {
+            let storage = Arc::new(MemoryStorage::new());
+            let service = WorkflowService::new(storage.clone());
+            storage
+                .save_workflow_instance(
+                    &namespace,
+                    0,
+                    vec![],
+                    WorkflowInstance {
+                        id: format!("{status:?}-workflow"),
+                        workflow_def_id: "scheduled-workflow".to_string(),
+                        version: 0,
+                        status,
+                        trigger_input: None,
+                        pinned_worker_host: None,
+                        tasks: HashMap::new(),
+                        verifier_states: HashMap::new(),
+                    },
+                )
+                .await
+                .unwrap();
+
+            assert!(
+                !service
+                    .has_active_workflow_instance_for_def(&namespace, "scheduled-workflow")
+                    .await
+                    .unwrap()
+            );
+        }
     }
 
     #[tokio::test]

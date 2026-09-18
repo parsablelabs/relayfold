@@ -2,6 +2,7 @@ use crate::core::worker::{WorkerHeartbeatState, WorkerHostId, WorkerIdentity};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::debug;
@@ -26,6 +27,7 @@ pub struct WorkerRegistry {
     workers: Arc<RwLock<HashMap<String, WorkerState>>>,
     heartbeat_interval: Duration,
     missed_heartbeat_threshold: u32,
+    next_host_selection: Arc<AtomicUsize>
 }
 
 impl Default for WorkerRegistry {
@@ -50,6 +52,7 @@ impl WorkerRegistry {
             workers: Arc::new(RwLock::new(HashMap::new())),
             heartbeat_interval,
             missed_heartbeat_threshold,
+            next_host_selection: Arc::new(AtomicUsize::new(0))
         }
     }
 
@@ -91,7 +94,15 @@ impl WorkerRegistry {
 
     pub async fn select_eligible_host(&self) -> Option<WorkerHostId> {
         self.update_worker_liveness().await;
-        self.eligible_hosts().await.into_iter().next()
+
+        let eligible_hosts = self.eligible_hosts().await;
+        if eligible_hosts.is_empty() {
+            return None;
+        }
+
+        let index = self.next_host_selection.fetch_add(1, Ordering::Relaxed) % eligible_hosts.len();
+
+        eligible_hosts.get(index).cloned()
     }
 
     pub async fn select_force_retry_host(

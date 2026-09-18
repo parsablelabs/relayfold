@@ -1,0 +1,4 @@
+scheduler:
+  - namespace: global-namespace
+    workflow_def_id: simple-function-workflow
+    cron: "* * * * *"
