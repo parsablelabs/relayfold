@@ -88,6 +88,10 @@
   --node-tone: #14735f;
 }
 
+.workflow-node--api {
+  --node-tone: #14735f;
+}
+
 .workflow-node--agent {
   --node-tone: #7c4d9e;
 }

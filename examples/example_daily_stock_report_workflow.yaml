@@ -3,229 +3,137 @@ description: Research current stock data and recent news, render a daily HTML sn
 
 # Start this workflow with one input object:
 # {
-#   "tickers": ["AAPL", "MSFT"],
+#   "ticker": "AAPL",
 #   "recipient_email": "analyst@example.com"
 # }
 #
-# Twelve Data supplies quotes and recent daily closes through its API. The news
-# agent uses browser search. The final Function task calls Mailgun's HTTP API.
-# This example targets Mailgun's US API endpoint.
+# Two API Call tasks use URL input interpolation and credential header
+# interpolation to retrieve a quote and recent daily closes from Twelve Data.
+# The news agent uses browser search. The final Function task calls Mailgun's
+# HTTP API. This example targets Mailgun's US API endpoint.
 
 tasks:
-  - id: fetch-market-data
+  - id: fetch-market-quote
     kind:
-      function:
-        dependencies: []
-        code: |
-          const API_BASE = "https://api.twelvedata.com";
-
-          export default async function run({ inputs, credentials }) {
-            const request = inputs[0] ?? {};
-            const apiKey = required(credentials.twelve_data, "twelve_data");
-            const recipientEmail =
-              required(request.recipient_email, "recipient_email");
-            const tickers = normalizeTickers(request.tickers);
-            const marketData = await Promise.all(
-              tickers.map((ticker) => fetchTicker(ticker, apiKey))
-            );
-
-            return {
-              response: `Loaded Twelve Data market data for ${marketData.length} ticker(s)`,
-              recipient_email: recipientEmail,
-              report_date: new Date().toISOString().slice(0, 10),
-              market_data: marketData
-            };
-          }
-
-          async function fetchTicker(ticker, apiKey) {
-            const quoteUrl = new URL("/quote", API_BASE);
-            quoteUrl.searchParams.set("symbol", ticker);
-
-            const historyUrl = new URL("/time_series", API_BASE);
-            historyUrl.searchParams.set("symbol", ticker);
-            historyUrl.searchParams.set("interval", "1day");
-            historyUrl.searchParams.set("outputsize", "7");
-            historyUrl.searchParams.set("order", "desc");
-
-            const [quote, history] = await Promise.all([
-              fetchJson(quoteUrl, apiKey),
-              fetchJson(historyUrl, apiKey)
-            ]);
-
-            if (!Array.isArray(history.values) || history.values.length === 0) {
-              throw new Error(`Twelve Data returned no daily history for ${ticker}`);
-            }
-
-            const currentPrice = finiteNumber(quote.close);
-            const timestamp = finiteNumber(quote.timestamp);
-            const recentCloses = history.values
-              .map((value) => ({
-                date: String(value.datetime).slice(0, 10),
-                close: finiteNumber(value.close)
-              }))
-              .filter((value) => value.date && value.close !== null)
-              .reverse();
-
-            if (recentCloses.length < 2) {
-              throw new Error(
-                `Twelve Data returned insufficient daily history for ${ticker}`
-              );
-            }
-
-            return {
-              ticker,
-              company_name: quote.name || ticker,
-              current_price: currentPrice,
-              currency: quote.currency || history.meta?.currency || null,
-              price_as_of:
-                timestamp === null
-                  ? quote.datetime || null
-                  : new Date(timestamp * 1000).toISOString(),
-              price_type: isTrue(quote.is_market_open) ? "live" : "latest_close",
-              recent_closes: recentCloses,
-              source_urls: [quoteUrl.toString(), historyUrl.toString()]
-            };
-          }
-
-          async function fetchJson(url, apiKey) {
-            const response = await fetch(url, {
-              headers: {
-                Authorization: `apikey ${apiKey}`,
-                Accept: "application/json"
-              }
-            });
-            const text = await response.text();
-            let body;
-
-            try {
-              body = text ? JSON.parse(text) : {};
-            } catch {
-              throw new Error(
-                `Twelve Data returned invalid JSON for ${url.pathname}`
-              );
-            }
-
-            if (!response.ok || body?.status === "error" || body?.code) {
-              throw new Error(
-                `Twelve Data request failed for ${url.pathname}: ` +
-                `${body?.message || `HTTP ${response.status}`}`
-              );
-            }
-
-            return body;
-          }
-
-          function normalizeTickers(value) {
-            if (!Array.isArray(value) || value.length < 1 || value.length > 4) {
-              throw new Error("tickers must contain between one and four symbols");
-            }
-            return value.map((ticker) => String(ticker).trim().toUpperCase());
-          }
-
-          function finiteNumber(value) {
-            const parsed = Number(value);
-            return Number.isFinite(parsed) ? parsed : null;
-          }
-
-          function isTrue(value) {
-            return value === true || value === "true";
-          }
-
-          function required(value, name) {
-            if (typeof value !== "string" || value.trim() === "") {
-              throw new Error(`Missing required value: ${name}`);
-            }
-            return value;
-          }
-
+      apiCall:
+        url: "https://api.twelvedata.com/quote?symbol=${inputs[0].ticker}"
+        method: GET
+        headers:
+          Accept: application/json
+          Authorization: "apikey ${credentials.twelve_data}"
     input_schemas:
       - type: object
         required:
-          - tickers
+          - ticker
           - recipient_email
         properties:
-          tickers:
-            type: array
-            minItems: 1
-            maxItems: 4
-            items:
-              type: string
-              minLength: 1
+          ticker:
+            type: string
+            pattern: "^[A-Za-z][A-Za-z0-9.-]*$"
           recipient_email:
             type: string
             format: email
     output_schema:
       type: object
       required:
-        - response
-        - recipient_email
-        - report_date
-        - market_data
+        - status
+        - headers
+        - body
       properties:
-        response:
-          type: string
-        recipient_email:
-          type: string
-          format: email
-        report_date:
-          type: string
-          format: date
-        market_data:
-          type: array
-          minItems: 1
-          items:
-            type: object
-            required:
-              - ticker
-              - company_name
-              - current_price
-              - currency
-              - price_as_of
-              - price_type
-              - recent_closes
-              - source_urls
-            properties:
-              ticker:
-                type: string
-              company_name:
-                type: string
-              current_price:
-                type:
-                  - number
-                  - "null"
-              currency:
-                type:
-                  - string
-                  - "null"
-              price_as_of:
-                type:
-                  - string
-                  - "null"
-              price_type:
-                type: string
-                enum:
-                  - live
-                  - latest_close
-              recent_closes:
-                type: array
-                minItems: 2
-                items:
-                  type: object
-                  required:
-                    - date
-                    - close
-                  properties:
-                    date:
-                      type: string
-                      format: date
-                    close:
-                      type: number
-              source_urls:
-                type: array
-                minItems: 2
-                items:
+        status:
+          type: integer
+        headers:
+          type: object
+        body:
+          type: object
+          required:
+            - symbol
+            - close
+          properties:
+            symbol:
+              type: string
+            name:
+              type: string
+            close:
+              type:
+                - string
+                - number
+            currency:
+              type: string
+            datetime:
+              type: string
+            timestamp:
+              type:
+                - integer
+                - string
+            is_market_open:
+              type:
+                - boolean
+                - string
+    required_credentials:
+      - twelve_data
+
+  - id: fetch-market-history
+    kind:
+      apiCall:
+        url: "https://api.twelvedata.com/time_series?symbol=${inputs[0].ticker}&interval=1day&outputsize=7&order=desc"
+        method: GET
+        headers:
+          Accept: application/json
+          Authorization: "apikey ${credentials.twelve_data}"
+    input_schemas:
+      - type: object
+        required:
+          - ticker
+          - recipient_email
+        properties:
+          ticker:
+            type: string
+            pattern: "^[A-Za-z][A-Za-z0-9.-]*$"
+          recipient_email:
+            type: string
+            format: email
+    output_schema:
+      type: object
+      required:
+        - status
+        - headers
+        - body
+      properties:
+        status:
+          type: integer
+        headers:
+          type: object
+        body:
+          type: object
+          required:
+            - meta
+            - values
+          properties:
+            meta:
+              type: object
+              required:
+                - symbol
+              properties:
+                symbol:
                   type: string
-                  format: uri
+                currency:
+                  type: string
+            values:
+              type: array
+              minItems: 2
+              items:
+                type: object
+                required:
+                  - datetime
+                  - close
+                properties:
+                  datetime:
+                    type: string
+                  close:
+                    type:
+                      - string
+                      - number
     required_credentials:
       - twelve_data
 
@@ -235,13 +143,21 @@ tasks:
         model_id: "google/gemini-3-flash-preview"
         provider_url: ""
         prompt: |
-          Analyze the structured Twelve Data response in inputs[0]. Do not browse
-          for or invent market values. Copy recipient_email and report_date
-          unchanged.
+          Analyze the raw Twelve Data API Call outputs. inputs[0].body is the
+          quote and inputs[1].body is the daily time series. Do not browse for or
+          invent market values. Set report_date to the current date in YYYY-MM-DD
+          format.
 
           Requirements:
-          - Include every market_data item exactly once and preserve its factual
-            fields and source_urls.
+          - Return exactly one stock. Use the provider's symbol and company name.
+          - Convert numeric strings to JSON numbers. Use quote.close as
+            current_price and order recent closes from oldest to newest.
+          - Derive price_as_of from quote.timestamp when present, otherwise use
+            quote.datetime. Set price_type to live only when is_market_open is true;
+            otherwise use latest_close.
+          - Include these source URLs, substituting the provider's symbol:
+            https://api.twelvedata.com/quote?symbol=SYMBOL and
+            https://api.twelvedata.com/time_series?symbol=SYMBOL&interval=1day&outputsize=7&order=desc
           - Classify the recent trajectory as upward, downward, flat, or
             insufficient_data. Base the classification on the closing-price series,
             considering the overall first-to-last change and whether intermediate
@@ -263,13 +179,10 @@ tasks:
       type: object
       required:
         - response
-        - recipient_email
         - report_date
         - stocks
       properties:
         response:
-          type: string
-        recipient_email:
           type: string
         report_date:
           type: string
@@ -351,14 +264,13 @@ tasks:
         model_id: "google/gemini-3-flash-preview"
         provider_url: ""
         prompt: |
-          Find and summarize material recent news for every ticker in
-          inputs[0].tickers. Copy inputs[0].recipient_email unchanged into the
-          response.
+          Find and summarize material recent news for inputs[0].ticker. Copy
+          inputs[0].recipient_email unchanged into the response.
 
           Requirements:
-          - You must use web_search for every ticker. Never answer from memory.
+          - You must use web_search for the ticker. Never answer from memory.
           - Focus on news published during the last seven calendar days relative to
-            the current date. Include up to three material items per ticker.
+            the current date. Include up to three material items.
           - Prefer company announcements, regulatory filings, and reputable
             financial reporting. Deduplicate syndicated versions of the same story.
           - Distinguish the publication date from the date an event occurred.
@@ -377,16 +289,12 @@ tasks:
     input_schemas:
       - type: object
         required:
-          - tickers
+          - ticker
           - recipient_email
         properties:
-          tickers:
-            type: array
-            minItems: 1
-            maxItems: 4
-            items:
-              type: string
-              minLength: 1
+          ticker:
+            type: string
+            pattern: "^[A-Za-z][A-Za-z0-9.-]*$"
           recipient_email:
             type: string
             format: email
@@ -450,8 +358,7 @@ tasks:
           news_by_ticker. Match records by ticker rather than relying on array order.
 
           Requirements:
-          - Verify both upstream recipient_email values match, then copy the value
-            exactly. If they differ, fail instead of selecting one.
+          - Copy recipient_email exactly from the news input.
           - Include every requested stock exactly once.
           - For each stock show current price, price timestamp/type, recent closes,
             trajectory, trajectory basis, and recent-news summaries.
@@ -588,7 +495,9 @@ tasks:
       - mailgun_from
 
 data_bindings:
-  - source_task_id: fetch-market-data
+  - source_task_id: fetch-market-quote
+    target_task_id: analyze-market-data
+  - source_task_id: fetch-market-history
     target_task_id: analyze-market-data
   - source_task_id: analyze-market-data
     target_task_id: compose-html-report

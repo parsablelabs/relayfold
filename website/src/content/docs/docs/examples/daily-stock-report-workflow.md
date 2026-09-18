@@ -12,12 +12,12 @@ is a multi-agent example that builds and emails a dated stock report.
 
 ## Inputs
 
-Start each run with an object containing one or more ticker symbols and the
-report recipient email address:
+Start each run with an object containing one ticker symbol and the report
+recipient email address:
 
 ```json
 {
-  "tickers": ["AAPL", "MSFT"],
+  "ticker": "AAPL",
   "recipient_email": "analyst@example.com"
 }
 ```
@@ -45,30 +45,34 @@ endpoint in `send-report-email` to `https://api.eu.mailgun.net`.
 
 <pre class="mermaid">
 flowchart TD
-    Input["Tickers + recipient"]
-    Fetch["fetch-market-data<br/>Twelve Data quote + daily history"]
+    Input["Ticker + recipient"]
+    Quote["fetch-market-quote<br/>API Call task"]
+    History["fetch-market-history<br/>API Call task"]
     Market["analyze-market-data<br/>short-term trajectory"]
     News["research-recent-news<br/>last seven days"]
     HTML["compose-html-report<br/>email-safe HTML"]
     Mailgun["send-report-email<br/>Mailgun API"]
-    Input --> Fetch
-    Fetch --> Market
+    Input --> Quote
+    Input --> History
+    Quote --> Market
+    History --> Market
     Input --> News
     Market --> HTML
     News --> HTML
     HTML --> Mailgun
 </pre>
 
-`fetch-market-data` calls Twelve Data's `/quote` and `/time_series` endpoints
-for each ticker. It uses API responses for prices and recent closes instead of
-asking a model to find market values on public websites. `analyze-market-data`
-then describes the observed short-term trajectory from those closes. The news
-task runs independently and collects up to three recent, sourced items per
-ticker through browser search.
+`fetch-market-quote` and `fetch-market-history` are API Call tasks. Each inserts
+`${inputs[0].ticker}` into its Twelve Data URL and resolves
+`${credentials.twelve_data}` in the authorization header. RelayFold encodes the
+ticker before making the requests. `analyze-market-data` combines the raw quote
+and time-series responses and describes the observed short-term trajectory. The
+news task runs independently and collects up to three recent, sourced items
+through browser search.
 
-The Twelve Data Basic (free) plan allows eight API credits per minute. Each ticker
-uses two credits, so this demonstration intentionally accepts at most four
-tickers and fetches them in parallel without rate-limit batching.
+The Twelve Data Basic (free) plan allows eight API credits per minute. This
+demonstration uses two credits per run: one for the quote and one for recent
+daily history.
 
 The composition task joins the results by ticker and produces a complete HTML
 document with inline styles, source links, and a plain-text fallback. The final
@@ -80,9 +84,10 @@ advice or a prediction of future performance.
 
 ## Register the workflow
 
-The root `fetch-market-data` and `research-recent-news` tasks each declare the
-same object input schema. RelayFold validates the invocation body against those
-schemas and exposes it to both tasks as `inputs[0]`.
+The root `fetch-market-quote`, `fetch-market-history`, and
+`research-recent-news` tasks each declare the same object input schema.
+RelayFold validates the invocation body against those schemas and exposes it to
+all three tasks as `inputs[0]`.
 
 ```bash
 export RELAYFOLD_URL=http://localhost:3000
@@ -98,7 +103,7 @@ curl -fsSL https://raw.githubusercontent.com/parsablelabs/relayfold/main/example
 curl -fsS -X POST "$RELAYFOLD_URL/workflow-def/daily-stock-report-workflow" \
   -H 'content-type: application/json' \
   -d '{
-    "tickers": ["AAPL", "MSFT"],
+    "ticker": "AAPL",
     "recipient_email": "analyst@example.com"
   }'
 ```

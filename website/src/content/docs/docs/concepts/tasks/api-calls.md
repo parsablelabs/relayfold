@@ -10,11 +10,17 @@ tasks:
   - id: fetch-status
     kind:
       apiCall:
-        url: "https://api.example.com/items"
+        url: "https://api.example.com/items/${inputs[0].item_id}"
         method: "GET"
         headers:
           Accept: "application/json"
           Authorization: "Bearer ${credentials.api_token}"
+    input_schemas:
+      - type: object
+        required: [item_id]
+        properties:
+          item_id:
+            type: string
     required_credentials:
       - api_token
 ```
@@ -34,11 +40,44 @@ Use a Function task instead when the step needs request signing, provider SDKs, 
 
 An API call supports:
 
-- `url`: the request URL
+- `url`: the request URL. Values from task inputs can be interpolated with `${inputs[index].path}`.
 - `method`: the HTTP method
 - `headers`: an optional map of request-header names to string values. Values support [credential interpolation](#credential-interpolation).
 
-Omitting `headers` sends no workflow-configured headers. Request bodies, query-parameter construction, request signing, and task-specific retry behavior are not part of API call tasks; use a Function task when you need those features.
+Omitting `headers` sends no workflow-configured headers. Request bodies,
+structured query-parameter construction, request signing, and task-specific
+retry behavior are not part of API call tasks; use a Function task when you
+need those features. Input interpolation can fill values in query parameters
+already present in `url`.
+
+## URL input interpolation
+
+API call URLs can interpolate scalar values from the task's input array:
+
+```yaml
+kind:
+  apiCall:
+    url: "https://api.example.com/accounts/${inputs[0].account_id}/items?limit=${inputs[1]}"
+    method: "GET"
+```
+
+Expressions begin with an input-array index and can traverse object properties
+and nested array indexes. For example, `${inputs[0].symbols[1]}` reads the
+second value in the `symbols` property of the first task input.
+
+- Interpolated values must be strings, numbers, or booleans. Missing values,
+  `null`, objects, and arrays fail the task before a network request is made.
+- RelayFold URL-component encodes each interpolated value so it cannot modify
+  the surrounding URL structure.
+- Resolution is single-pass. An expression contained in an input value is not
+  evaluated again.
+- Use `$${` to produce a literal `${` in a URL.
+- Only the `inputs` namespace is supported in URLs. Credentials remain limited
+  to header interpolation so they are not exposed through URLs.
+
+A root API Call task must declare an `input_schemas` entry to receive workflow
+trigger input as `inputs[0]`. Downstream task inputs arrive through data bindings
+in the same array used by Agent and Function tasks.
 
 ## Credential interpolation
 
@@ -60,7 +99,7 @@ tasks:
 ### Interpolation rules
 
 - **Syntax**: Expressions use `${credentials.<name>}`. The credential name must start with a letter or underscore and contain only letters, digits, and underscores.
-- **Namespacing**: Only the `credentials` namespace is supported.
+- **Namespacing**: Only the `credentials` namespace is supported in header values.
 - **Escaping**: Use `$${` to produce a literal `${` in a header value. For example, `$${credentials.api_token}` becomes `${credentials.api_token}` without being resolved.
 - **Validation**: Every referenced credential must be declared in the task's `required_credentials` list.
 - **Failure**: The task fails if a referenced credential is undeclared, unavailable, or if the expression is malformed.

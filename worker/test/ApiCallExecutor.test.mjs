@@ -36,6 +36,42 @@ test('forwards literal headers and parses JSON responses', async () => {
     });
 });
 
+test('interpolates URL-encoded input values into the request URL', async () => {
+    await withServer((request, response) => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ requestUrl: request.url }));
+    }, async (url) => {
+        const result = await execute(
+            `${url}/quotes/\${inputs[0].ticker}?market=\${inputs[0].markets[1]}`,
+            undefined,
+            [{ ticker: 'BRK/B', markets: ['NYSE', 'US stocks'] }],
+        );
+
+        assert.equal(result.status, 'ok');
+        assert.equal(result.output.body.requestUrl, '/quotes/BRK%2FB?market=US%20stocks');
+    });
+});
+
+test('does not make a request when URL interpolation fails', async () => {
+    let requestCount = 0;
+
+    await withServer((_request, response) => {
+        requestCount++;
+        response.writeHead(200);
+        response.end();
+    }, async (url) => {
+        const result = await execute(
+            `${url}/quotes/\${inputs[1].ticker}`,
+            undefined,
+            [{ ticker: 'AAPL' }],
+        );
+
+        assert.equal(result.status, 'error');
+        assert.match(result.message, /references a missing value/);
+        assert.equal(requestCount, 0);
+    });
+});
+
 test('returns non-JSON response bodies as strings when headers are omitted', async () => {
     await withServer((_request, response) => {
         response.writeHead(200, { 'content-type': 'text/plain' });
@@ -97,7 +133,7 @@ test('fails invalid request configuration with a human-readable reason', async (
     assert.match(result.message, /API request GET not a URL failed:/);
 });
 
-async function execute(url, headers) {
+async function execute(url, headers, inputs = []) {
     const apiCall = { url, method: 'GET' };
     if (headers !== undefined) {
         apiCall.headers = headers;
@@ -113,7 +149,7 @@ async function execute(url, headers) {
                 required_credentials: [],
             },
             workspace_path: '/tmp/relayfold/workflow-1/taskid-fetch-data',
-            inputs: [],
+            inputs,
         },
         credentials
     );

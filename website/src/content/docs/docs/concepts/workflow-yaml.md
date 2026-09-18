@@ -103,17 +103,19 @@ API Call task:
 ```yaml
 kind:
   apiCall:
-    url: "https://api.example.com/items"
+    url: "https://api.example.com/items/${inputs[0].item_id}"
     method: "GET"
     headers:
       Accept: "application/json"
-      X-Client-Version: "1"
+      Authorization: "Bearer ${credentials.api_token}"
 ```
 
-`headers` is an optional string-to-string map of literal request headers. A successful
-API call returns `{ status, headers, body }`. JSON media types produce a parsed JSON
-`body`; other response bodies are strings. When present, `output_schema` validates
-this complete response value before it can flow to downstream tasks.
+`url` supports URL-encoded scalar input interpolation with
+`${inputs[index].path}`. `headers` is an optional string-to-string map whose
+values support `${credentials.name}` interpolation. A successful API call
+returns `{ status, headers, body }`. JSON media types produce a parsed JSON
+`body`; other response bodies are strings. When present, `output_schema`
+validates this complete response value before it can flow to downstream tasks.
 
 ## Data bindings
 
@@ -125,7 +127,9 @@ data_bindings:
     target_task_id: summarize
 ```
 
-If a task has multiple upstream bindings, it receives multiple input values. The target task should declare `input_schemas` when it depends on specific input shapes.
+If a task has multiple upstream bindings, it receives multiple input values in
+the order those bindings appear in `data_bindings`. The target task should
+declare `input_schemas` when it depends on specific input shapes.
 
 ## Verifier control
 

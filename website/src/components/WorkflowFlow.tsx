@@ -17,7 +17,7 @@ type WorkflowNodeData = {
   title: string;
   kind: string;
   detail: string;
-  tone: 'input' | 'function' | 'agent' | 'verify' | 'email';
+  tone: 'input' | 'api' | 'function' | 'agent' | 'verify' | 'email';
   targetPosition?: Position;
   sourcePosition?: Position;
   hasTarget?: boolean;
@@ -94,9 +94,9 @@ const nodeData: Array<Node<FlowNodeData>> = [
     position: { x: 38, y: 74 },
     data: {
       title: 'Pull stock data',
-      kind: 'Function Task',
-      detail: 'Calls market data URLs',
-      tone: 'function',
+      kind: 'API Call Tasks',
+      detail: 'Fetch quote and price history',
+      tone: 'api',
       hasTarget: false,
       hasSource: true,
     },
