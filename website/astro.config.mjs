@@ -35,6 +35,7 @@ export default defineConfig({
         {
           label: 'Concepts',
           items: [
+            { label: 'Glossary', slug: 'docs/concepts/glossary' },
             { label: 'Workflows', slug: 'docs/concepts/workflows' },
             {
               label: 'Tasks',
@@ -56,6 +57,7 @@ export default defineConfig({
         {
           label: 'Operations',
           items: [
+            { label: 'Scheduled Workflows', slug: 'docs/operations/scheduler' },
             { label: 'Scaling', slug: 'docs/operations/scaling' },
             { label: 'Orchestrator Storage', slug: 'docs/operations/storage' },
             { label: 'Workspaces', slug: 'docs/operations/workspaces' },
