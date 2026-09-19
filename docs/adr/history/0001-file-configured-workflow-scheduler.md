@@ -1,6 +1,13 @@
 ---
-status: proposed
+status: historical
+normative: false
 ---
+
+> This document is an unmaintained snapshot of the scheduler’s initial design.
+> It is preserved for historical context only and must not be used as the
+> source of truth for current behavior.
+>
+> Current behavior is defined in code, executable tests and described in `website/`
 
 # Run workflows from a file-configured scheduler
 
