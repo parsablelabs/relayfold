@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use orchestrator::core::scheduler::start_task_scheduler;
 use tokio::net::TcpListener;
 use tokio::time::{self, Duration};
 use tracing::{error, info};
@@ -30,6 +31,7 @@ async fn main() -> anyhow::Result<()> {
     let worker_registry = WorkerRegistry::new();
     let task_dispatcher = Arc::new(TaskDispatcher::new());
     let workflow_queue = Arc::new(MemoryWorkflowQueue::new(workflow_queue_capacity()));
+    let workflow_service = Arc::new(WorkflowService::new(storage.clone()));
 
     // Initialize Orchestrator (Application Layer)
     let orchestrator = Arc::new(Orchestrator::new(
@@ -55,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
     // Setup API (Interface Layer)
     let public_app = router::create_public_router(
         orchestrator.clone(),
-        Arc::new(WorkflowService::new(storage.clone())),
+        workflow_service.clone(),
         Arc::new(FunctionService::new(storage)),
         worker_registry.clone(),
         namespace_resolver,
@@ -70,12 +72,14 @@ async fn main() -> anyhow::Result<()> {
     info!("Public API listening on {}", public_listener.local_addr()?);
     info!("Worker API listening on {}", worker_listener.local_addr()?);
 
+    // TODO: consider handling task failures, with restarts
     let _ = task_dispatcher::start_task_timeout_monitor(task_dispatcher.clone());
-    let _ = start_pinned_host_loss_monitor(
+    let _ = start_task_pinned_host_loss_monitor(
         orchestrator.clone(),
         worker_registry.clone(),
         task_dispatcher.clone(),
     );
+    let _ = start_task_scheduler(orchestrator.clone(), workflow_service.clone(), worker_registry.clone());
 
     tokio::try_join!(
         axum::serve(public_listener, public_app),
@@ -336,7 +340,7 @@ fn resolve_worker_http_addr() -> String {
     std::env::var("RELAYFOLD_WORKER_HTTP_ADDR").unwrap_or_else(|_| "127.0.0.1:3001".to_string())
 }
 
-fn start_pinned_host_loss_monitor(
+fn start_task_pinned_host_loss_monitor(
     orchestrator: Arc<Orchestrator>,
     worker_registry: WorkerRegistry,
     task_dispatcher: Arc<TaskDispatcher>,

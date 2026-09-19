@@ -79,6 +79,29 @@ Example response:
 }
 ```
 
+## Schedule the workflow
+
+After registering the workflow, create `scheduler.yaml`:
+
+```yaml
+scheduler:
+  - namespace: global-namespace
+    workflow_def_id: simple-function-workflow
+    cron: "* * * * *"
+    input:
+      name: Scheduler
+```
+
+Enable the scheduler and point the orchestrator at the file:
+
+```bash
+export RELAYFOLD_SCHEDULER_ENABLED=true
+export RELAYFOLD_SCHEDULER_CONFIG_PATH=./scheduler.yaml
+```
+
+This schedule starts the workflow once per minute when no instance of the same
+workflow is already active.
+
 ## Check the output
 
 Replace `<workflow_id>` with the `id` returned when you executed the workflow:

@@ -44,6 +44,12 @@ details.
 - [`worker/`](worker/) — TypeScript runtime for executing workflow tasks
 - [`website/`](website/) — project website and user documentation
 
+## Local Development
+
+- Start both Orchestrator and Worker
+
+`docker compose up --build`
+
 ## Acknowledgements
 
 RelayFold's Agent runtime is built on the excellent
