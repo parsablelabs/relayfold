@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 use crate::adapters::worker_registry::WorkerRegistry;
 use crate::core::namespace::Namespace;
+use crate::core::orchestrator::Orchestrator;
 use crate::core::workflow::workflow_service::WorkflowService;
 use crate::core::consts::{RELAYFOLD_SCHEDULER_CONFIG_PATH, RELAYFOLD_SCHEDULER_ENABLED};
 use anyhow::{Context, Result, ensure};
@@ -68,7 +69,7 @@ fn normalize_to_minute(time: &DateTime<Utc>) -> DateTime<Utc> {
         .and_then(|time| time.with_second(0)).unwrap()
 }
 
-pub async fn run_scheduler(workflow_service: Arc<WorkflowService>, worker_registry: WorkerRegistry) {
+pub async fn run_scheduler(orchestrator: Arc<Orchestrator>, workflow_service: Arc<WorkflowService>, worker_registry: WorkerRegistry) {
         let is_enabled = env::var(RELAYFOLD_SCHEDULER_ENABLED)
             .map_or(false, |v| v.parse::<bool>().unwrap_or(false));
 
@@ -131,22 +132,34 @@ pub async fn run_scheduler(workflow_service: Arc<WorkflowService>, worker_regist
 
                 if !is_workflow_pending {
                     match workflow_service.create_workflow_instance_for_def(&schedule.namespace, &schedule.workflow_def_id, host, schedule.input.clone()).await {
-                        Ok(instance_id) => info!(?instance_id, ?schedule, "workflow enqueued"),
-                        Err(error) => error!(%error, "workflow instantiation fialed")
-                    }
+                        Ok(instance_id) => {
+                            let enqueued = orchestrator
+                                .enqueue_workflow_instance(&schedule.namespace, instance_id.clone())
+                                .await;
+
+                            match enqueued {
+                                Ok(()) => info!(?instance_id, ?schedule, "workflow enqueued successfully"),
+                                Err(error) => error!(%error, "workflow instantiation fialed")
+                            }
+                        },
+                        Err(error) => {
+                            error!(%error, "workflow instantiation fialed");
+                        }
+                    };
+
                 }
             }
         }
         // log if error, do not interrupt the loop
 }
 
-pub fn start_task_scheduler(workflow_service: Arc<WorkflowService>, worker_registry: WorkerRegistry) -> tokio::task::JoinHandle<()> {
+pub fn start_task_scheduler(orchestrator: Arc<Orchestrator>, workflow_service: Arc<WorkflowService>, worker_registry: WorkerRegistry) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move { 
         let mut interval = time::interval(Duration::from_secs(60));
 
         loop {
             interval.tick().await;
-            run_scheduler(workflow_service.clone(), worker_registry.clone()).await;
+            run_scheduler(orchestrator.clone(), workflow_service.clone(), worker_registry.clone()).await;
         }
     })
 }

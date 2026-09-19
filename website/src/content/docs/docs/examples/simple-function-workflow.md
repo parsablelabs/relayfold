@@ -88,6 +88,8 @@ scheduler:
   - namespace: global-namespace
     workflow_def_id: simple-function-workflow
     cron: "* * * * *"
+    input:
+      name: Scheduler
 ```
 
 Enable the scheduler and point the orchestrator at the file:

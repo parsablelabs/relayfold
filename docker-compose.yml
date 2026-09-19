@@ -17,6 +17,8 @@ services:
       RELAYFOLD_STORE_MYSQL_DATABASE: ${RELAYFOLD_STORE_MYSQL_DATABASE:-relayfold}
       RELAYFOLD_STORE_MYSQL_USERNAME: ${RELAYFOLD_STORE_MYSQL_USERNAME:-root}
       RELAYFOLD_STORE_MYSQL_PASSWORD: ${RELAYFOLD_STORE_MYSQL_PASSWORD:-pass}
+      RELAYFOLD_SCHEDULER_ENABLED: false
+      RELAYFOLD_SCHEDULER_CONFIG_PATH: /etc/relayfold/scheduler.yaml
       # To use SQLite instead, comment out the MySQL settings above and uncomment:
       # RELAYFOLD_STORAGE: sqlite
       # RELAYFOLD_STORE_SQLITE_PATH: /var/lib/relayfold/relayfold.db
@@ -33,6 +35,8 @@ services:
       interval: 5s
       timeout: 2s
       retries: 12
+    volumes:
+      - ./scheduler.yaml:/etc/relayfold/scheduler.yaml:ro
   worker:
     build:
       context: ./worker
