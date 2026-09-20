@@ -10,7 +10,7 @@ use croner::Cron;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::time::{self, Duration};
+use tokio::time::{self, Duration, MissedTickBehavior};
 use std::{env};
 use chrono::{DateTime, Timelike, Utc};
 
@@ -156,6 +156,8 @@ pub async fn run_scheduler(orchestrator: Arc<Orchestrator>, workflow_service: Ar
 pub fn start_task_scheduler(orchestrator: Arc<Orchestrator>, workflow_service: Arc<WorkflowService>, worker_registry: WorkerRegistry) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move { 
         let mut interval = time::interval(Duration::from_secs(60));
+        // Prevent burst file catchup ticks due to a stall
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         loop {
             interval.tick().await;
