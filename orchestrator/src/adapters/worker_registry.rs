@@ -27,7 +27,7 @@ pub struct WorkerRegistry {
     workers: Arc<RwLock<HashMap<String, WorkerState>>>,
     heartbeat_interval: Duration,
     missed_heartbeat_threshold: u32,
-    next_host_selection: Arc<AtomicUsize>
+    next_host_selection: Arc<AtomicUsize>,
 }
 
 impl Default for WorkerRegistry {
@@ -52,7 +52,7 @@ impl WorkerRegistry {
             workers: Arc::new(RwLock::new(HashMap::new())),
             heartbeat_interval,
             missed_heartbeat_threshold,
-            next_host_selection: Arc::new(AtomicUsize::new(0))
+            next_host_selection: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -83,6 +83,10 @@ impl WorkerRegistry {
         }
 
         debug!(%worker_id, %host_id, "worker heartbeat joined or renewed registration");
+    }
+
+    pub async fn worker_count(&self) -> usize {
+        self.workers.read().await.len()
     }
 
     pub fn heartbeat_policy(&self) -> WorkerHeartbeatPolicy {
@@ -343,6 +347,18 @@ mod tests {
             registry.select_eligible_host().await,
             Some(WorkerHostId::new("host-a"))
         );
+    }
+
+    #[tokio::test]
+    async fn worker_count_tracks_registered_workers() {
+        let registry = WorkerRegistry::new();
+        assert_eq!(registry.worker_count().await, 0);
+
+        registry
+            .register_worker(test_registration_for_host("worker-1", "host-a"))
+            .await;
+
+        assert_eq!(registry.worker_count().await, 1);
     }
 
     #[tokio::test]

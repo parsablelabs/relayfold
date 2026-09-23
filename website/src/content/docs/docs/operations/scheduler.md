@@ -15,6 +15,7 @@ scheduler:
   - namespace: global-namespace
     workflow_def_id: simple-function-workflow
     cron: "* * * * *"
+    run_on_startup: true
     input:
       name: Scheduler
 ```
@@ -27,6 +28,14 @@ Each entry requires:
 
 `input` is optional. When present, RelayFold passes the value to each workflow
 instance created by the schedule.
+
+`run_on_startup` is optional and defaults to `false`. Set it to `true` to
+request one workflow run when the orchestrator process starts, independently of
+whether the cron expression matches that minute.
+
+Each namespace and workflow definition pair can appear only once in the
+scheduler configuration. RelayFold rejects the complete configuration when it
+contains duplicate entries for the same workflow.
 
 Cron expressions use UTC and have one-minute resolution. For example,
 `0 12 * * *` runs daily at 12:00 UTC.
@@ -52,18 +61,29 @@ repository root and change `RELAYFOLD_SCHEDULER_ENABLED` to `true` in
 
 ## Runtime behavior
 
+When scheduling is enabled, RelayFold checks for registered
+worker before the first schedule evaluation. Subsequent evaluations run once per minute.
+
 The scheduler reads the complete configuration file once per minute, so saved
 changes take effect without restarting the orchestrator. A missing, unreadable,
 or invalid file prevents new scheduled runs during that evaluation and is
 reported in the orchestrator logs. Existing workflow instances are unaffected.
 
+A startup run remains eligible while RelayFold waits for a valid initial
+configuration and an eligible worker host. If startup and cron eligibility
+coincide, RelayFold creates at most one workflow instance. Reloading the
+configuration does not repeat a startup run that has already been handled by
+the current orchestrator process.
+
 RelayFold starts a scheduled workflow only when no instance of the same
 workflow definition and namespace is active. `Pending`, `Running`, `Paused`,
 and `InputNeeded` instances are active for this check. After an active instance
 reaches `Completed` or `Failed`, the next matching cron occurrence can start a
-new instance.
+new instance. A startup request never resumes, recreates, or overlaps an active
+instance.
 
 Scheduled occurrences are not durable. RelayFold does not catch up occurrences
 missed while the orchestrator was stopped, its configuration was invalid, or no
 eligible worker host was available. Removing or changing an entry does not
-cancel workflow instances that it already started.
+cancel workflow instances that it already started. `run_on_startup` is a
+separate startup trigger, not a request to replay missed cron occurrences.
