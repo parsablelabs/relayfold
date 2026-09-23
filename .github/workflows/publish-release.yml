@@ -24,6 +24,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      release_sha: ${{ steps.version.outputs.release_sha }}
       image_namespace: ${{ steps.version.outputs.image_namespace }}
     steps:
       - name: Check out source
@@ -48,10 +49,12 @@ jobs:
 
           tag="v$version"
           image_namespace="${GITHUB_REPOSITORY_OWNER,,}"
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-            echo "Tag $tag already exists." >&2
+          if ! git show-ref --verify --quiet "refs/tags/$tag"; then
+            echo "Tag $tag does not exist. Create and push the tag before publishing a release." >&2
             exit 1
           fi
+          release_sha="$(git rev-parse "refs/tags/$tag^{commit}")"
+          echo "Using tag $tag at $release_sha."
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $tag already exists." >&2
             exit 1
@@ -59,6 +62,7 @@ jobs:
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "image_namespace=$image_namespace" >> "$GITHUB_OUTPUT"
 
   orchestrator-artifact:
@@ -68,6 +72,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -121,6 +127,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
@@ -142,7 +150,7 @@ jobs:
           tags: ghcr.io/${{ needs.prepare.outputs.image_namespace }}/relayfold-${{ matrix.component }}:${{ needs.prepare.outputs.version }}
           labels: |
             org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.release_sha }}
           provenance: mode=max
           sbom: true
           cache-from: type=gha,scope=${{ matrix.component }}-image
@@ -175,7 +183,7 @@ jobs:
 
           gh release create "$TAG" release-assets/* \
             --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
+            --verify-tag \
             --title "RelayFold $VERSION" \
             --generate-notes
 
