@@ -36,7 +36,6 @@ jobs:
         id: version
         env:
           INPUT_VERSION: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -55,10 +54,6 @@ jobs:
           fi
           release_sha="$(git rev-parse "refs/tags/$tag^{commit}")"
           echo "Using tag $tag at $release_sha."
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $tag already exists." >&2
-            exit 1
-          fi
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -172,7 +167,7 @@ jobs:
           name: release-assets
           path: release-assets
 
-      - name: Create GitHub release
+      - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
@@ -181,11 +176,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          gh release create "$TAG" release-assets/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "RelayFold $VERSION" \
-            --generate-notes
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; replacing its generated assets."
+            gh release upload "$TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "RelayFold $VERSION" \
+              --generate-notes
+          fi
 
       - name: Write release summary
         env:
