@@ -61,9 +61,8 @@ repository root and change `RELAYFOLD_SCHEDULER_ENABLED` to `true` in
 
 ## Runtime behavior
 
-When scheduling is enabled, RelayFold waits for an eligible worker host to
-register before the first schedule evaluation. The first evaluation starts
-immediately after registration; subsequent evaluations run once per minute.
+When scheduling is enabled, RelayFold checks for registered
+worker before the first schedule evaluation. Subsequent evaluations run once per minute.
 
 The scheduler reads the complete configuration file once per minute, so saved
 changes take effect without restarting the orchestrator. A missing, unreadable,

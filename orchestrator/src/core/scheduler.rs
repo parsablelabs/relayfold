@@ -263,9 +263,11 @@ pub fn start_task_scheduler(
             .map_or(false, |value| value.parse::<bool>().unwrap_or(false));
 
         if is_enabled {
-            info!("scheduler waiting for an eligible worker host");
-            worker_registry.wait_for_eligible_host().await;
-            info!("eligible worker host registered; starting scheduler");
+            info!("scheduler waiting for a registered worker");
+            while worker_registry.worker_count().await == 0 {
+                time::sleep(Duration::from_secs(1)).await;
+            }
+            info!("worker registered; starting scheduler");
         }
 
         let mut interval = time::interval(Duration::from_secs(60));
