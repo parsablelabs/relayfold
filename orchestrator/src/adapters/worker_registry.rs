@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
-use tokio::sync::RwLock;
+use tokio::sync::{Notify, RwLock};
 use tracing::debug;
 
 const DEFAULT_WORKER_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -25,9 +25,10 @@ struct WorkerState {
 #[derive(Debug, Clone)]
 pub struct WorkerRegistry {
     workers: Arc<RwLock<HashMap<String, WorkerState>>>,
+    worker_available: Arc<Notify>,
     heartbeat_interval: Duration,
     missed_heartbeat_threshold: u32,
-    next_host_selection: Arc<AtomicUsize>
+    next_host_selection: Arc<AtomicUsize>,
 }
 
 impl Default for WorkerRegistry {
@@ -50,9 +51,10 @@ impl WorkerRegistry {
     ) -> Self {
         Self {
             workers: Arc::new(RwLock::new(HashMap::new())),
+            worker_available: Arc::new(Notify::new()),
             heartbeat_interval,
             missed_heartbeat_threshold,
-            next_host_selection: Arc::new(AtomicUsize::new(0))
+            next_host_selection: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -82,7 +84,23 @@ impl WorkerRegistry {
             }
         }
 
+        drop(workers);
+        self.worker_available.notify_one();
         debug!(%worker_id, %host_id, "worker heartbeat joined or renewed registration");
+    }
+
+    /// Waits until at least one registered worker belongs to an eligible host.
+    pub async fn wait_for_eligible_host(&self) {
+        loop {
+            let worker_available = self.worker_available.notified();
+            self.update_worker_liveness().await;
+
+            if !self.eligible_hosts().await.is_empty() {
+                return;
+            }
+
+            worker_available.await;
+        }
     }
 
     pub fn heartbeat_policy(&self) -> WorkerHeartbeatPolicy {
@@ -343,6 +361,27 @@ mod tests {
             registry.select_eligible_host().await,
             Some(WorkerHostId::new("host-a"))
         );
+    }
+
+    #[tokio::test]
+    async fn wait_for_eligible_host_blocks_until_a_worker_registers() {
+        let registry = WorkerRegistry::new();
+        let waiting_registry = registry.clone();
+        let waiter = tokio::spawn(async move {
+            waiting_registry.wait_for_eligible_host().await;
+        });
+
+        tokio::task::yield_now().await;
+        assert!(!waiter.is_finished());
+
+        registry
+            .register_worker(test_registration_for_host("worker-1", "host-a"))
+            .await;
+
+        time::timeout(Duration::from_secs(1), waiter)
+            .await
+            .expect("worker readiness wait should finish after registration")
+            .unwrap();
     }
 
     #[tokio::test]

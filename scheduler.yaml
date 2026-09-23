@@ -2,5 +2,6 @@ scheduler:
   - namespace: global-namespace
     workflow_def_id: simple-function-workflow
     cron: "* * * * *"
+    run_on_startup: true
     input:
       name: Scheduler
