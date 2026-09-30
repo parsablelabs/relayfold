@@ -96,4 +96,10 @@ not change the persisted format.
 
 Workflow transition commits are atomic: when the orchestrator records a workflow change, the SQL adapter saves the event records, workflow row, task rows, and verifier rows together. Workflow list summaries are derived from workflow and task rows when queried.
 
-SQL storage does not make task execution exactly once. Tasks should still be designed for at-least-once execution. See [Reliability and Side Effects](/relayfold/docs/operations/reliability/).
+### Current state and event history
+
+RelayFold uses a hybrid persistence model, not a fully event-sourced store. The
+latest committed workflow state is authoritative and is the normal read and
+restart-recovery path. Ordered workflow events record how that state changed and
+are available through the [workflow event endpoint](/relayfold/docs/api-reference/#workflow-events)
+for historical inspection and debugging.
