@@ -73,6 +73,8 @@ pub struct TaskDef {
     #[serde(default)]
     pub allow_agent_feedback: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<crate::core::workflow::models::SandboxDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control: Option<TaskControl>,
     #[serde(default)]
     pub timeout_secs: Option<u64>,
@@ -242,6 +244,8 @@ fn default_generation_index() -> u32 {
 /// attempt details the worker needs while executing.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExecutionMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<crate::core::workflow::models::SandboxDef>,
     #[serde(default = "default_generation_index")]
     pub generation_index: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -253,6 +257,7 @@ pub struct ExecutionMetadata {
 impl Default for ExecutionMetadata {
     fn default() -> Self {
         Self {
+            sandbox: None,
             generation_index: default_generation_index(),
             loop_context: None,
             human_input_provided: None,

@@ -6,6 +6,7 @@ import type { CredentialsPort } from './core/ports/CredentialsPort.js';
 import type { SessionStore } from './core/ports/SessionStore.js';
 import type { TaskExecutionResult } from './core/ports/TaskExecutor.js';
 import { materializeTaskWorkspace } from './core/WorkspaceManager.js';
+import { executeTask } from './adapters/executeTask.js';
 
 import * as os from 'os';
 import { randomUUID } from 'node:crypto';
@@ -101,7 +102,7 @@ async function processTask(
 
         // Get the appropriate executor based on task kind
         const executor = executorFactory.getExecutor(payload.task.kind);
-        const result = await executor.execute(payload, credentialsAdapter, sessionStore);
+        const result = await executeTask(payload, executor, credentialsAdapter, sessionStore);
 
         return mapExecutionResult(result);
     } catch (error) {

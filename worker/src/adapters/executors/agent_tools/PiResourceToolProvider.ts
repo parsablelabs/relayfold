@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import {
     AuthStorage,
     DefaultResourceLoader,
+    DefaultPackageManager,
     ExtensionRunner,
     loadSkillsFromDir,
     ModelRegistry,
@@ -20,6 +21,7 @@ type PackageJson = {
 };
 
 export type PiResourceToolProviderOptions = {
+    skillsOnly?: boolean;
     cwd?: string;
     agentDir?: string;
     nodeModulesDir?: string;
@@ -48,14 +50,23 @@ export class PiResourceToolProvider {
         ];
 
         const settingsManager = SettingsManager.inMemory();
+        // noExtensions alone still loads explicitly supplied extension sources.
+        // Resolve package skill paths without importing their executable extensions.
+        const skillPaths = this.options.skillsOnly
+            ? (await new DefaultPackageManager({ cwd, agentDir, settingsManager })
+                .resolveExtensionSources(extensionPaths, { temporary: true })).skills
+                .filter(resource => resource.enabled).map(resource => resource.path)
+            : [];
         const resourceLoader = new DefaultResourceLoader({
             cwd,
             agentDir,
             settingsManager,
-            additionalExtensionPaths: extensionPaths,
+            additionalExtensionPaths: this.options.skillsOnly ? [] : extensionPaths,
+            additionalSkillPaths: skillPaths,
             noPromptTemplates: true,
             noThemes: true,
             noContextFiles: true,
+            noExtensions: this.options.skillsOnly === true,
         });
 
         await resourceLoader.reload();
@@ -68,6 +79,8 @@ export class PiResourceToolProvider {
             logger.warn(diagnostic, '[PiResourceToolProvider] Pi skill load issue');
         }
         const skills = loadSkillsWithMountedPriority(skillsResult.skills, join(agentDir, 'skills'));
+
+        if (this.options.skillsOnly) return { tools: [], skills };
 
         const runner = new ExtensionRunner(
             extensionsResult.extensions,

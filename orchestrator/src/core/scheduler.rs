@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::time::{self, Duration, MissedTickBehavior};
-use tracing::{error, info, debug};
+use tracing::{debug, error, info};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -339,9 +339,11 @@ mod tests {
     fn workflow_def(id: &str) -> WorkflowDef {
         WorkflowDef {
             example_input: None,
+            sandbox: None,
             id: id.to_string(),
             description: String::new(),
             tasks: vec![TaskDef {
+                sandbox: None,
                 id: "task".to_string(),
                 kind: TaskTypeDef::Function(FunctionTaskDef::Inline {
                     dependencies: vec![],

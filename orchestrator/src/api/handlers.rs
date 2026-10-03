@@ -973,6 +973,7 @@ data_bindings: []
         let state = app_state(storage.clone(), WorkerRegistry::new());
         let workflow_def = WorkflowDef {
             example_input: None,
+            sandbox: None,
             id: "workflow-1".to_string(),
             description: String::new(),
             tasks: vec![],
@@ -1037,6 +1038,7 @@ data_bindings: []
                 &crate::core::namespace::test_namespace(),
                 WorkflowDef {
                     example_input: None,
+                    sandbox: None,
                     id: "workflow-1".to_string(),
                     description: "Example workflow".to_string(),
                     tasks: vec![],
@@ -1072,9 +1074,11 @@ data_bindings: []
                 &crate::core::namespace::test_namespace(),
                 WorkflowDef {
                     example_input: None,
+                    sandbox: None,
                     id: "workflow-1".to_string(),
                     description: "Example workflow".to_string(),
                     tasks: vec![crate::core::task::TaskDef {
+                        sandbox: None,
                         id: "taska".to_string(),
                         kind: TaskTypeDef::Agent {
                             model_id: "model".to_string(),
@@ -1450,9 +1454,11 @@ code: "export default async function run() { return {}; }"
                 &crate::core::namespace::test_namespace(),
                 WorkflowDef {
                     example_input: None,
+                    sandbox: None,
                     id: "workflow-1".to_string(),
                     description: String::new(),
                     tasks: vec![crate::core::task::TaskDef {
+                        sandbox: None,
                         id: "taska".to_string(),
                         kind: TaskTypeDef::Agent {
                             model_id: "model".to_string(),

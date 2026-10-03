@@ -169,6 +169,8 @@ pub struct WorkflowDef {
     pub example_input: Option<serde_json::Value>,
     #[serde(default)]
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<SandboxDef>,
     pub tasks: Vec<TaskDef>,
     #[serde(deserialize_with = "deserialize_data_bindings")]
     pub data_bindings: Vec<DataBinding>,
@@ -212,6 +214,20 @@ where
         }));
     }
     Ok(expanded)
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SandboxDef {
+    #[serde(default)]
+    pub network: SandboxNetworkPolicy,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SandboxNetworkPolicy {
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
 }
 
 /// Compact workflow definition metadata for discovery and selection.
