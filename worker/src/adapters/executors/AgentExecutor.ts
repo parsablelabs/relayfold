@@ -3,7 +3,7 @@ import type { TaskExecutionPayload } from '../../core/models/TaskDef.js';
 import type { CredentialsPort } from '../../core/ports/CredentialsPort.js';
 import { getModel } from '@earendil-works/pi-ai';
 import { Agent } from '@earendil-works/pi-agent-core';
-import { AuthStorage, createAgentSession, createCodingTools, formatSkillsForPrompt, SessionManager, type Skill } from '@earendil-works/pi-coding-agent';
+import { AuthStorage, createAgentSession, createCodingTools, DefaultResourceLoader, ModelRegistry, SettingsManager, formatSkillsForPrompt, SessionManager, type Skill } from '@earendil-works/pi-coding-agent';
 import { logger } from '../../utils/logger.js';
 import { createJsonSchemaValidator } from '../../core/JsonSchemaValidator.js';
 import { createBraveSearchTool } from './agent_tools/braveSearchTool.js';
@@ -18,7 +18,9 @@ import { selectApprovedSkills } from './agent_tools/skillSelection.js';
 import type { SessionStore } from '../../core/ports/SessionStore.js';
 import { nativeSessionDir, persistSessionBestEffort, materializePiSessionFile } from '../../core/ports/SessionStore.js';
 import { agentSessionKey } from '../../core/models/AgentSession.js';
-import { resolveCredentialEnvironment, withTaskEnvironment } from '../../core/TaskEnvironment.js';
+import { resolveCredentialEnvironment, resolveTaskProviderApiKey, withTaskEnvironment } from '../../core/TaskEnvironment.js';
+import type { TaskSandbox } from '../../core/ports/TaskSandbox.js';
+import { createSandboxCodingTools } from './agent_tools/sandboxCodingTools.js';
 
 function extractAssistantText(agent: Agent): string {
     let resultText = '';
@@ -270,7 +272,7 @@ export function buildAgentPromptParts(args: {
 }
 
 export class AgentExecutor implements TaskExecutor {
-    async execute(payload: TaskExecutionPayload, credentialsPort: CredentialsPort, sessionStore: SessionStore): Promise<TaskExecutionResult> {
+    async execute(payload: TaskExecutionPayload, credentialsPort: CredentialsPort, sessionStore: SessionStore, sandbox?: TaskSandbox): Promise<TaskExecutionResult> {
         const agentDef = (payload.task.kind as any).agent;
         const modelIdFull = agentDef.model_id as string;
 
@@ -279,16 +281,22 @@ export class AgentExecutor implements TaskExecutor {
         }
 
         const envCredentials = await resolveCredentialEnvironment(payload, credentialsPort);
+        if (sandbox) {
+            const apiKey = resolveTaskProviderApiKey(modelIdFull.split('/')[0]!, envCredentials);
+            return this.executeWithEnvironment(payload, credentialsPort, sessionStore, sandbox, apiKey);
+        }
         return await withTaskEnvironment(
             envCredentials,
-            () => this.executeWithEnvironment(payload, credentialsPort, sessionStore)
+            () => this.executeWithEnvironment(payload, credentialsPort, sessionStore, sandbox)
         );
     }
 
     private async executeWithEnvironment(
         payload: TaskExecutionPayload,
         credentialsPort: CredentialsPort,
-        sessionStore: SessionStore
+        sessionStore: SessionStore,
+        sandbox?: TaskSandbox,
+        apiKey?: string
     ): Promise<TaskExecutionResult> {
         const agentDef = (payload.task.kind as any).agent;
         const ask = (agentDef.ask ?? (payload.task as any).ask) === true;
@@ -353,10 +361,26 @@ export class AgentExecutor implements TaskExecutor {
         }
 
         // Consider moving tool registration in here
+        const resourceLoader = sandbox ? new DefaultResourceLoader({
+            agentDir: nativeSessionDir(),
+            cwd: process.cwd(), settingsManager: SettingsManager.inMemory(),
+            noExtensions: true, noSkills: true, noContextFiles: true,
+            noPromptTemplates: true, noThemes: true,
+        }) : undefined;
+        await resourceLoader?.reload();
+        const authStorage = AuthStorage.inMemory();
+        if (apiKey) authStorage.setRuntimeApiKey(providerName, apiKey);
         const { session } = await createAgentSession({
+            ...(sandbox && resourceLoader ? {
+                tools: [],
+                resourceLoader,
+                modelRegistry: ModelRegistry.inMemory(authStorage),
+                cwd: sandbox.workspacePath,
+                settingsManager: SettingsManager.inMemory(),
+            } : {}),
             sessionManager,
             model,
-            authStorage: AuthStorage.inMemory(),
+            authStorage,
         });
 
         const agent = session.agent;
@@ -376,18 +400,19 @@ export class AgentExecutor implements TaskExecutor {
         // Tool setup
         const toolRegistry = new ToolRegistry();
         toolRegistry.registerTools([
-            createFetchUrlTool(),
-            createHttpRequestTool(),
+            createFetchUrlTool(sandbox?.fetch),
+            createHttpRequestTool(sandbox?.fetch),
             createCurrentTimeTool(),
         ]);
-        toolRegistry.registerTools(createCodingTools(process.cwd()));
-        const piResources = await new PiResourceToolProvider().loadResources();
+        toolRegistry.registerTools(sandbox ? createSandboxCodingTools(sandbox) : createCodingTools(process.cwd()));
+        const piResources = sandbox ? { tools: [], skills: sandbox.skills } : await new PiResourceToolProvider().loadResources();
         toolRegistry.registerTools(piResources.tools);
 
         const systemBraveApiKey = "system_brave_api_key";
-        const braveApiKey = await credentialsPort.getCredential(systemBraveApiKey);
+        const braveApiKey = !sandbox || payload.task.required_credentials.includes(systemBraveApiKey)
+            ? await credentialsPort.getCredential(systemBraveApiKey) : undefined;
         if (braveApiKey) {
-            toolRegistry.registerTool(createBraveSearchTool(braveApiKey));
+            toolRegistry.registerTool(createBraveSearchTool(braveApiKey, sandbox?.fetch));
         } else {
             logger.error(`Error retrieving system credentials for ${systemBraveApiKey}`);
         }
@@ -416,6 +441,7 @@ export class AgentExecutor implements TaskExecutor {
         const { approvedSkills, unavailableApprovedSkillNames } = selectApprovedSkills(piResources.skills, agentDef.skills);
 
         if (unavailableApprovedToolNames.length > 0) {
+            if (sandbox) throw new Error(`Tools are not supported in sandboxed tasks: ${unavailableApprovedToolNames.join(', ')}`);
             logger.warn({ unavailableApprovedToolNames }, "[AgentExecutor] Ignoring approved tools that are not available");
         }
 
@@ -461,7 +487,10 @@ export class AgentExecutor implements TaskExecutor {
             "[AgentExecutor] Final agent prompt"
         );
 
+        const abortOnClose = () => agent.abort();
+        sandbox?.signal.addEventListener('abort', abortOnClose, { once: true });
         try {
+            if (sandbox?.signal.aborted) throw new Error('Task sandbox is closed');
             await session.prompt(finalPrompt);
 
             if (inputNeededQuestion) {
@@ -538,6 +567,7 @@ export class AgentExecutor implements TaskExecutor {
             }
             throw e;
         } finally {
+            sandbox?.signal.removeEventListener('abort', abortOnClose);
             if (reuseSession) {
                 await persistSessionBestEffort(sessionKey, session, sessionStore);
             }

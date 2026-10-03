@@ -1,7 +1,8 @@
 import { Type } from '@earendil-works/pi-ai';
 import { logger } from '../../../utils/logger.js';
+import type { TaskFetch } from '../../../core/ports/TaskSandbox.js';
 
-export function createBraveSearchTool(braveApiKey: string) {
+export function createBraveSearchTool(braveApiKey: string, request: TaskFetch = fetch) {
     return {
         name: "web_search",
         description: "Search the web using Brave Search API",
@@ -11,7 +12,7 @@ export function createBraveSearchTool(braveApiKey: string) {
         }),
         execute: async (toolCallId: string, args: any, signal?: AbortSignal) => {
             logger.info(`[BraveSearchTool] Executing web_search for query: ${args.query}`);
-            const response = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(args.query)}`, {
+            const response = await request(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(args.query)}`, {
                 headers: {
                     "Accept": "application/json",
                     "Accept-Encoding": "gzip",

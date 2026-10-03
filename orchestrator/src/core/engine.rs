@@ -1025,6 +1025,14 @@ impl WorkflowEngine {
         let loop_context = self.loop_execution_context(instance, def, task_instance);
 
         ExecutionMetadata {
+            sandbox: def.sandbox.as_ref().map(|default| {
+                def.tasks
+                    .iter()
+                    .find(|task| task.id == task_instance.task_def_id)
+                    .and_then(|task| task.sandbox.as_ref())
+                    .unwrap_or(default)
+                    .clone()
+            }),
             generation_index: task_instance.generation_index,
             loop_context,
             human_input_provided: task_instance

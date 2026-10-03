@@ -26,6 +26,16 @@ During task execution, the worker exposes every required credential as an upperc
 
 Function tasks receive required credentials in the function context and in the child process environment.
 
+When a workflow declares `sandbox`, each task attempt receives a fresh Gondolin
+VM with only its own `required_credentials`. It does not inherit the worker's
+environment or a previous task's credential environment. Required credentials
+are real values readable by guest code, including model API keys declared by an
+Agent task. The VM environment is discarded after the attempt; shared workspace
+files persist. There is no workflow-level credential declaration.
+
+Sandboxed `web_search` tasks must explicitly declare `system_brave_api_key`;
+the worker does not supply this system credential implicitly inside a sandbox.
+
 Agent tasks expose the complete required credential set while Pi creates the Agent session and executes the prompt. No list position is special. Credentials are also visible to approved Agent tools, so list only what the task needs and keep tool approval narrow.
 
 ## Agent model authentication
@@ -50,10 +60,11 @@ Common mappings include:
 | `gemini_api_key` | `GEMINI_API_KEY` | `google/...` |
 | `anthropic_api_key` | `ANTHROPIC_API_KEY` | `anthropic/...` |
 
-RelayFold currently supports Agent model authentication through
-provider-standard API-key environment variables. It does not create a Pi
-runtime override from `required_credentials`, and it does not manage
-persistent Pi or OAuth authentication.
+RelayFold supports Agent model authentication through provider-standard API-key
+names. Unsandboxed Agents use environment-based authentication. Sandboxed Agents
+resolve the key only from their own `required_credentials` and use an in-memory
+Pi authentication override, so another task's environment cannot provide the
+model key. RelayFold does not manage persistent Pi or OAuth authentication.
 
 ## Missing credentials
 

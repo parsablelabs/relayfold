@@ -153,6 +153,7 @@ mod tests {
             workflow_inst_id: "workflow-1".to_string(),
             task_id: "dispatch-1".to_string(),
             task: TaskDef {
+                sandbox: None,
                 id: "hello".to_string(),
                 kind: TaskTypeDef::Function(FunctionTaskDef::Inline {
                     dependencies: vec![],

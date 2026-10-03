@@ -3,9 +3,11 @@ import type { TaskExecutionPayload } from '../../core/models/TaskDef.js';
 import type { CredentialsPort } from '../../core/ports/CredentialsPort.js';
 import { logger } from '../../utils/logger.js';
 import { CredentialResolver } from '../../core/CredentialResolver.js';
+import type { SessionStore } from '../../core/ports/SessionStore.js';
+import type { TaskSandbox } from '../../core/ports/TaskSandbox.js';
 
 export class ApiCallExecutor implements TaskExecutor {
-    async execute(payload: TaskExecutionPayload, credentialsPort: CredentialsPort): Promise<TaskExecutionResult> {
+    async execute(payload: TaskExecutionPayload, credentialsPort: CredentialsPort, _sessions?: SessionStore, sandbox?: TaskSandbox): Promise<TaskExecutionResult> {
         if (!('apiCall' in payload.task.kind)) {
             return { status: 'error', message: 'ApiCallExecutor received a non-ApiCall task' };
         }
@@ -29,7 +31,7 @@ export class ApiCallExecutor implements TaskExecutor {
         logger.info(`[ApiCallExecutor] Calling API: ${apiCallDef.method} ${apiCallDef.url}`);
 
         try {
-            const response = await fetch(apiCallDef.url, {
+            const response = await (sandbox?.fetch ?? fetch)(apiCallDef.url, {
                 method: apiCallDef.method,
                 headers: resolvedHeaders,
             });

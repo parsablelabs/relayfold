@@ -21,8 +21,76 @@ data_bindings: []
 | --- | --- | --- |
 | `id` | Yes | Workflow definition ID. IDs are normalized during registration. |
 | `description` | No | Human-readable workflow description used in workflow discovery lists. Defaults to an empty string. |
+| `sandbox` | No | Run each task attempt in a fresh Gondolin sandbox. Omit it for normal host execution. |
 | `tasks` | Yes | Task definitions that make up the workflow graph. |
 | `data_bindings` | Yes | Edges that pass outputs from source tasks to target task inputs. |
+
+## Optional sandbox
+
+```yaml
+sandbox:
+  network:
+    allowed_hosts:
+      - api.github.com
+      - registry.npmjs.org
+      - "*.example.com"
+```
+
+The presence of `sandbox` enables Gondolin for Agent tools, Function execution
+and dependency installation, and API Calls. `sandbox: {}` blocks outbound task
+network access. `network.allowed_hosts` permits HTTP and HTTPS to matching
+hostnames; use hostnames rather than URLs. `*` matches any substring, and a lone
+`"*"` permits any public hostname. Private and loopback addresses remain blocked.
+Arbitrary TCP, SSH, and WebSocket access are not enabled. Redirects follow the
+same policy. Omitting `sandbox` preserves normal execution.
+
+The workflow policy is the default for every task. A task can define its own
+`sandbox.network.allowed_hosts`, which **replaces** the default rather than
+adding to it. Task-level `sandbox: {}` denies all outbound task network access.
+Task overrides require a workflow-level `sandbox`; otherwise the workflow is
+rejected. Tasks cannot disable workflow sandboxing.
+
+```yaml
+sandbox: {} # Sandbox all tasks; deny network by default
+tasks:
+  - id: research
+    sandbox:
+      network:
+        allowed_hosts: [docs.example.com]
+    # Add kind and other task fields here.
+  - id: analyze
+    # Inherits deny-all; add kind and other task fields here.
+  - id: publish
+    sandbox:
+      network:
+        allowed_hosts: [api.example.com]
+    required_credentials: [publishing_token]
+    # Add kind and other task fields here.
+```
+
+Each task attempt receives a new VM containing only that task's
+`required_credentials`, exposed as uppercased environment variables. Function
+tasks also receive those credentials through their existing context. There is
+no workflow-level credential declaration or backend selector. The VM is closed
+on completion, failure, human-input pause, or timeout; startup failures never
+fall back to host execution.
+
+The selected workspace is mounted at `/workspace` and retains its existing
+sharing and retry behavior. Other guest files and processes are disposable.
+Secrets that a task explicitly writes into the workspace become shared files.
+Approved skill directories are mounted read-only inside the guest.
+
+Sandboxed Agents support the built-in `read`, `write`, `edit`, `bash`,
+`http_request`, `fetch_url`, `web_search`, `current_time`, and `ask_user` tools.
+Host Pi extension tools are not loaded; explicitly requesting an unsupported
+tool fails the task. `web_search` requires `system_brave_api_key` in the task's
+`required_credentials` and access to `api.search.brave.com`. `fetch_url` needs
+access to its reader service, `r.jina.ai`.
+
+Agent model requests, session storage, and orchestration remain on the trusted
+worker host. The network policy governs task I/O rather than the model connection.
+See [Task Credentials](/relayfold/docs/operations/credentials/) and
+[Production Deployment](/relayfold/docs/operations/production-deployment/).
 
 ## Task fields
 
@@ -49,6 +117,7 @@ tasks:
 | --- | --- | --- |
 | `id` | Yes | Logical task ID used by bindings, retries, and results. |
 | `kind` | Yes | One of `agent`, `function`, or `apiCall`. |
+| `sandbox` | No | Replace the workflow's default network policy for this task. Requires workflow-level sandbox activation. |
 | `timeout_secs` | No | Task execution timeout. |
 | `input_schemas` | No | JSON Schemas for expected input slots. |
 | `output_schema` | No | JSON Schema for task output. Verifier tasks must omit this because RelayFold injects the decision schema. |

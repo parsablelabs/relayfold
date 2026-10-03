@@ -1,0 +1,38 @@
+id: sandboxed-function-workflow
+description: Run Functions with isolated credentials and a shared workspace.
+sandbox: {}
+tasks:
+  - id: prepare
+    workspace:
+      group_name: report
+    kind:
+      function:
+        dependencies: []
+        code: |
+          import { writeFileSync } from 'node:fs';
+          export default function run({ workspacePath }) {
+            writeFileSync(`${workspacePath}/report.txt`, 'Prepared report');
+            return { ready: true };
+          }
+    required_credentials:
+      - report_token
+  - id: inspect
+    workspace:
+      group_name: report
+    kind:
+      function:
+        dependencies: []
+        code: |
+          import { readFileSync } from 'node:fs';
+          export default function run({ workspacePath }) {
+            return {
+              report: readFileSync(`${workspacePath}/report.txt`, 'utf8'),
+              hasOwnCredential: Boolean(process.env.INSPECTION_TOKEN),
+              hasPriorCredential: Boolean(process.env.REPORT_TOKEN)
+            };
+          }
+    required_credentials:
+      - inspection_token
+data_bindings:
+  - source_task_id: prepare
+    target_task_id: inspect

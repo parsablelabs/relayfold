@@ -87,13 +87,17 @@ impl TaskDispatcher {
 
         let workspace_key = workspace_key_for_task(workflow_inst_id, task);
         let workspace_path_suffix = workspace_path_suffix(namespace, &workspace_key);
+        let mut dispatched_task = task.clone();
+        if execution_metadata.sandbox.is_some() {
+            dispatched_task.timeout_secs = Some(timeout.as_secs());
+        }
 
         self.pending_tasks.lock().await.push_back(PendingTask {
             dispatch: TaskDispatch {
                 namespace: namespace.clone(),
                 workflow_inst_id: workflow_inst_id.to_string(),
                 task_id: task_id.clone(),
-                task: task.clone(),
+                task: dispatched_task,
                 workspace_path_suffix,
                 inputs: inputs.to_vec(),
                 human_input_provided: execution_metadata.human_input_provided.clone(),
@@ -939,6 +943,7 @@ mod tests {
                         &[],
                         Duration::from_secs(5),
                         ExecutionMetadata {
+                            sandbox: Some(Default::default()),
                             generation_index: 3,
                             loop_context: None,
                             human_input_provided: None,
@@ -961,6 +966,9 @@ mod tests {
             .unwrap()
             .unwrap();
         let after_claim_epoch_ms = epoch_ms();
+
+        assert!(claimed.execution_metadata.sandbox.is_some());
+        assert_eq!(claimed.task.timeout_secs, Some(5));
 
         let in_flight_tasks = dispatcher.in_flight_tasks.lock().await;
         let lease = in_flight_tasks.get(&claimed.task_id).unwrap();
@@ -1294,6 +1302,7 @@ mod tests {
 
     fn test_task(id: &str) -> TaskDef {
         TaskDef {
+            sandbox: None,
             id: id.to_string(),
             kind: TaskTypeDef::Function(crate::core::function::models::FunctionTaskDef::Inline {
                 dependencies: vec![],

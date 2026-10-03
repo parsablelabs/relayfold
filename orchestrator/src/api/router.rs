@@ -377,9 +377,11 @@ mod tests {
             .save_workflow_def(
                 &namespace_b,
                 WorkflowDef {
+                    sandbox: None,
                     id: "shared-def".to_string(),
                     description: "namespace-b".to_string(),
                     tasks: vec![crate::core::task::TaskDef {
+                        sandbox: None,
                         id: "task-a".to_string(),
                         kind: TaskTypeDef::Agent {
                             model_id: "model".to_string(),

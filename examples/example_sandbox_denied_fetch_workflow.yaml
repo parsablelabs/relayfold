@@ -1,0 +1,26 @@
+id: sandbox-denied-fetch-workflow
+description: Demonstrate a failing Function task when sandbox policy denies fetching the RelayFold website.
+sandbox: {} # Deny all outbound task network access.
+tasks:
+  - id: fetch-website
+    kind:
+      function:
+        dependencies: []
+        code: |
+          export default async function run() {
+            const response = await fetch('https://parsablelabs.github.io/relayfold/');
+            if (!response.ok) {
+              throw new Error(`Website fetch failed: HTTP ${response.status}`);
+            }
+            return { contents: await response.text() };
+          }
+    output_schema:
+      type: object
+      required:
+        - contents
+      properties:
+        contents:
+          type: string
+    required_credentials: []
+
+data_bindings: []

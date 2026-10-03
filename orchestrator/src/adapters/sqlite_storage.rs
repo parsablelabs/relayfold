@@ -1013,6 +1013,7 @@ mod tests {
 
     fn workflow_def(id: &str, description: &str) -> WorkflowDef {
         WorkflowDef {
+            sandbox: None,
             id: id.to_string(),
             description: description.to_string(),
             tasks: vec![],

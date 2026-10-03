@@ -338,9 +338,11 @@ mod tests {
 
     fn workflow_def(id: &str) -> WorkflowDef {
         WorkflowDef {
+            sandbox: None,
             id: id.to_string(),
             description: String::new(),
             tasks: vec![TaskDef {
+                sandbox: None,
                 id: "task".to_string(),
                 kind: TaskTypeDef::Function(FunctionTaskDef::Inline {
                     dependencies: vec![],

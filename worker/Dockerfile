@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ COPY src ./src
 RUN npm run build
 
 # Stage 2: Create the production image
-FROM node:20-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 ARG RELAYFOLD_PI_PACKAGES=""
@@ -30,7 +30,7 @@ LABEL org.opencontainers.image.source="https://github.com/parsablelabs/relayfold
       org.opencontainers.image.description="RelayFold worker" \
       org.opencontainers.image.licenses="MIT"
 
-RUN apk add --no-cache bash curl git github-cli make g++ python3 py3-pip
+RUN apk add --no-cache bash curl git github-cli make g++ python3 py3-pip qemu-system-aarch64 qemu-system-x86_64 qemu-img
 RUN addgroup -g 10001 relayfold \
     && adduser -D -h /home/relayfold -u 10001 -G relayfold relayfold \
     && mkdir -p /app /home/relayfold/.relayfold /home/relayfold/.cache /home/relayfold/.pi/agent/skills /workspaces \
@@ -39,8 +39,11 @@ RUN addgroup -g 10001 relayfold \
 # Copy package.json and install production dependencies only
 COPY --chown=relayfold:relayfold package*.json ./
 
+# Populate the runtime npm cache with the same owner used during task execution.
+USER relayfold
 RUN npm install --omit=dev
 RUN if [ -n "$RELAYFOLD_PI_PACKAGES" ]; then npm install --omit=dev --no-save $RELAYFOLD_PI_PACKAGES; fi
+USER root
 RUN corepack enable
 
 # Copy the built output from the builder stage

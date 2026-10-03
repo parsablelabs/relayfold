@@ -790,14 +790,42 @@ fn verifier_rerun_start_task_id(
         .unwrap_or_else(|| verifier_task_id.to_string())
 }
 
+fn validate_sandbox(sandbox: &crate::core::workflow::models::SandboxDef) -> anyhow::Result<()> {
+    for host in &sandbox.network.allowed_hosts {
+        if host.is_empty()
+            || !host
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || ".-*:[]".contains(c))
+        {
+            anyhow::bail!(
+                "sandbox.network.allowed_hosts must contain host patterns, not URLs: {host}"
+            );
+        }
+    }
+    Ok(())
+}
+
 fn validate_and_normalize_workflow_def(mut def: WorkflowDef) -> anyhow::Result<WorkflowDef> {
     validate_identifier("workflow", &def.id)?;
     def.id = def.id.to_ascii_lowercase();
+
+    if let Some(sandbox) = &def.sandbox {
+        validate_sandbox(sandbox)?;
+    }
 
     let mut original_to_normalized = HashMap::new();
     let mut normalized_task_ids = HashSet::new();
 
     for task in &mut def.tasks {
+        if let Some(sandbox) = &task.sandbox {
+            if def.sandbox.is_none() {
+                anyhow::bail!(
+                    "task {} sandbox requires workflow-level sandbox activation",
+                    task.id
+                );
+            }
+            validate_sandbox(sandbox)?;
+        }
         validate_identifier("task", &task.id)?;
         let normalized = task.id.to_ascii_lowercase();
         if !normalized_task_ids.insert(normalized.clone()) {
@@ -1015,11 +1043,55 @@ mod tests {
         workflow_def_with_task(id, "taska")
     }
 
+    #[test]
+    fn sandbox_definition_is_optional_and_rejects_unknown_configuration() {
+        let original = workflow_def("sandbox-test");
+        let mut value = serde_json::to_value(&original).unwrap();
+        assert!(value.get("sandbox").is_none());
+        value["sandbox"] = json!({});
+        let sandboxed: WorkflowDef = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(
+            sandboxed.sandbox.unwrap().network.allowed_hosts,
+            Vec::<String>::new()
+        );
+        value["sandbox"] = json!({ "backend": "gondolin" });
+        assert!(serde_json::from_value::<WorkflowDef>(value.clone()).is_err());
+        value["sandbox"] = json!({ "network": { "allowed_hosts": ["https://example.com/path"] } });
+        let invalid: WorkflowDef = serde_json::from_value(value.clone()).unwrap();
+        assert!(validate_and_normalize_workflow_def(invalid).is_err());
+        value["sandbox"] =
+            json!({ "network": { "allowed_hosts": ["api.example.com", "*.github.com"] } });
+        let valid: WorkflowDef = serde_json::from_value(value).unwrap();
+        assert!(validate_and_normalize_workflow_def(valid).is_ok());
+    }
+
+    #[test]
+    fn task_sandbox_requires_workflow_activation_and_valid_hosts() {
+        let mut value = serde_json::to_value(workflow_def("sandbox-test")).unwrap();
+        value["tasks"][0]["sandbox"] = json!({});
+        let task_only: WorkflowDef = serde_json::from_value(value.clone()).unwrap();
+        assert!(
+            validate_and_normalize_workflow_def(task_only)
+                .unwrap_err()
+                .to_string()
+                .contains("requires workflow-level sandbox")
+        );
+        value["sandbox"] = json!({});
+        let valid: WorkflowDef = serde_json::from_value(value.clone()).unwrap();
+        assert!(validate_and_normalize_workflow_def(valid).is_ok());
+        value["tasks"][0]["sandbox"] =
+            json!({ "network": { "allowed_hosts": ["https://example.com/path"] } });
+        let invalid: WorkflowDef = serde_json::from_value(value).unwrap();
+        assert!(validate_and_normalize_workflow_def(invalid).is_err());
+    }
+
     fn workflow_def_with_task(id: &str, task_id: &str) -> WorkflowDef {
         WorkflowDef {
+            sandbox: None,
             id: id.to_string(),
             description: String::new(),
             tasks: vec![TaskDef {
+                sandbox: None,
                 id: task_id.to_string(),
                 kind: TaskTypeDef::Function(FunctionTaskDef::Inline {
                     dependencies: vec![],
@@ -1038,6 +1110,7 @@ mod tests {
 
     fn agent_task_def(task_id: &str) -> TaskDef {
         TaskDef {
+            sandbox: None,
             id: task_id.to_string(),
             kind: TaskTypeDef::Agent {
                 model_id: "test/model".to_string(),
@@ -1648,6 +1721,7 @@ mod tests {
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 WorkflowDef {
+                    sandbox: None,
                     id: "workflow1".to_string(),
                     description: String::new(),
                     tasks: vec![agent_task_def("taska")],
@@ -1733,6 +1807,7 @@ mod tests {
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 WorkflowDef {
+                    sandbox: None,
                     id: "workflow1".to_string(),
                     description: String::new(),
                     tasks: vec![agent_task_def("taska")],

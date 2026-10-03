@@ -163,8 +163,24 @@ pub struct WorkflowDef {
     pub id: String,
     #[serde(default)]
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<SandboxDef>,
     pub tasks: Vec<TaskDef>,
     pub data_bindings: Vec<DataBinding>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SandboxDef {
+    #[serde(default)]
+    pub network: SandboxNetworkPolicy,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SandboxNetworkPolicy {
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
 }
 
 /// Compact workflow definition metadata for discovery and selection.

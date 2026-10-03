@@ -1,7 +1,8 @@
 import { Type } from '@earendil-works/pi-ai';
 import { logger } from '../../../utils/logger.js';
+import type { TaskFetch } from '../../../core/ports/TaskSandbox.js';
 
-export function createHttpRequestTool() {
+export function createHttpRequestTool(request: TaskFetch = fetch) {
     return {
         name: "http_request",
         description: "Make an arbitrary HTTP request to an external API.",
@@ -27,7 +28,7 @@ export function createHttpRequestTool() {
             }
 
             try {
-                const response = await fetch(args.url, options);
+                const response = await request(args.url, options);
                 
                 const responseHeaders: Record<string, string> = {};
                 response.headers.forEach((value, key) => {

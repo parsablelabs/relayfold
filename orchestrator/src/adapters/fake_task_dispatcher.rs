@@ -111,6 +111,7 @@ mod tests {
 
     fn task_with_schema(schema: Value) -> TaskDef {
         TaskDef {
+            sandbox: None,
             id: "test-task".to_string(),
             kind: crate::core::task::TaskTypeDef::ApiCall {
                 url: "http://example.com".to_string(),
