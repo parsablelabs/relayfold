@@ -128,6 +128,11 @@ handling, artifact generation, and guidance for maintaining larger Function
 collections. A workspace declares all entries in `package.json` under
 `relayfold.functions`; one build emits a YAML and JSON artifact for every entry.
 
+For a complete integration with standalone scanning and publishing Functions,
+see [FillMyFunnel CloudWatch Review](/relayfold/docs/examples/fillmyfunnel-cloudwatch-workflow/).
+Its Function workspace includes deterministic tests, generated-artifact checks,
+and an optional read-only live CloudWatch check.
+
 ## When to use inline functions
 
 Use inline functions for small workflow-local logic:

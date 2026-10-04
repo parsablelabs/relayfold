@@ -106,3 +106,6 @@ when you executed it and read the final issue-update result:
 ```bash
 curl -fsS "$RELAYFOLD_URL/workflows/<workflow_id>/tasks/update-github-issue"
 ```
+
+For a recurring workflow that analyzes production logs and files issues, see
+[FillMyFunnel CloudWatch Review](/relayfold/docs/examples/fillmyfunnel-cloudwatch-workflow/).

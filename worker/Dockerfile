@@ -39,8 +39,10 @@ RUN addgroup -g 10001 relayfold \
 # Copy package.json and install production dependencies only
 COPY --chown=relayfold:relayfold package*.json ./
 
+USER relayfold
 RUN npm install --omit=dev
 RUN if [ -n "$RELAYFOLD_PI_PACKAGES" ]; then npm install --omit=dev --no-save $RELAYFOLD_PI_PACKAGES; fi
+USER root
 RUN corepack enable
 
 # Copy the built output from the builder stage
