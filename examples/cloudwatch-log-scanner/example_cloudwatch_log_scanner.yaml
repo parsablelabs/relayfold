@@ -1,5 +1,5 @@
 id: cloudwatch-log-scanner
-description: Scan CloudWatch warnings/errors, inspect FillMyFunnel main, and submit evidence-backed GitHub issues without code changes.
+description: Scan CloudWatch warnings/errors and submit evidence-backed GitHub issues without code changes.
 tasks:
   - id: scan-cloudwatch
     timeout_secs: 600
