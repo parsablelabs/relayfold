@@ -452,3 +452,10 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; padding:
 .workflow-diagram { overflow: auto; padding: 16px 0; }
 .workflow-diagram svg { display: block; margin: auto; }
 .diagram-legend { margin-bottom: 16px; }
+.trigger-input-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+.trigger-input-grid textarea { font-family: ui-monospace, monospace; font-size: .85rem; }
+.trigger-input-grid .muted { margin-top: 12px; }
+.trigger-schemas { display: flex; flex-direction: column; gap: 12px; }
+.trigger-schemas textarea { color: var(--color-text-muted); }
+#trigger-validation ul { padding-left: 32px; }
+@media (max-width: 900px) { .trigger-input-grid { grid-template-columns: 1fr; } }

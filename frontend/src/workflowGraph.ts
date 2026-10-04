@@ -3,9 +3,10 @@ import { parse } from 'yaml'
 type DefinitionTask = {
   id: string
   kind: Record<string, unknown>
+  input_schemas?: (boolean | Record<string, unknown>)[]
   control?: { verifier?: { max_iterations: number; rerun_from_task_id?: string } }
 }
-type Definition = {
+export type Definition = {
   id: string
   description?: string
   tasks: DefinitionTask[]

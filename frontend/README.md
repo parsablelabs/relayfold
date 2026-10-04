@@ -2,7 +2,7 @@
 
 A React dashboard for the orchestrator's public API. Browse registered workflows,
 open a workflow definition to see its Mermaid task diagram and registered YAML,
-and start a new instance with optional JSON trigger input,
+and start a new instance with validated JSON trigger input,
 view instances newest first by creation time, filter by status, and open an
 instance to inspect task attempts and event logs with the latest event at the top. Instance details
 support plain-text or JSON human input, pause, resume, and restarting failed tasks. Views refresh every
@@ -66,7 +66,10 @@ The `dist` files alone do not provide a proxy.
   verifiers and dashed arrows show explicit rerun targets. The YAML returned by
   the API represents the stored definition, without original file comments.
 - Click **Start workflow** on a definition page to queue a new instance and open
-  its details. Optionally expand **Trigger input** and enter valid JSON. An
+  its details. Enter JSON in **JSON trigger input**; entry task input schemas
+  appear alongside it. Input is validated as you type, and errors block starting.
+  All entry task schemas must pass; downstream task schemas do not apply to
+  trigger input. No input is needed when entry tasks declare no schemas. An
   eligible worker must be connected; connection and worker errors are shown
   on the definition page.
 - Check that all registered workflows appear and instances are ordered by creation
@@ -86,3 +89,11 @@ The instance list loads all API pages before sorting because the API itself
 orders by modification time. Large histories require more requests per refresh.
 Events are fetched in API sequence order, including every page, and displayed
 newest first while retaining their original event numbers.
+
+Trigger validation supports JSON Schema drafts 7, 2019-09, and 2020-12 with
+standard formats (including email, date, and URI). Schemas without `$schema`
+use draft 2020-12. Invalid schemas or unresolved external references block
+starting and display an error. The frontend does not fetch external schemas.
+Empty input and JSON `null` mean no trigger input in the orchestrator API; they
+are blocked when entry tasks declare input schemas. Entry tasks with multiple
+input slots cannot be supplied through the single workflow trigger payload.

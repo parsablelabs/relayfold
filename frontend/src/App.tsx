@@ -3,6 +3,8 @@ import type { FormEvent } from 'react'
 import { createApi, normalizeHost, statuses } from './api'
 import type { Connection, Report, Status, Task } from './api'
 import { diagramFromYaml } from './workflowGraph'
+import type { Definition } from './workflowGraph'
+import { createTriggerValidator } from './triggerInput'
 import WorkflowDiagram from './WorkflowDiagram'
 import './index.css'
 
@@ -65,29 +67,32 @@ function Workflows({ api, open }: { api: Api; open: (id: string) => void }) {
     </article>)}</div>
   </>
 }
-function StartWorkflow({ api, id, openInstance }: { api: Api; id: string; openInstance: (id: string) => void }) {
+function StartWorkflow({ api, id, definition, openInstance }: { api: Api; id: string; definition: Definition; openInstance: (id: string) => void }) {
   const [input, setInput] = useState('')
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
+  const validator = useMemo(() => createTriggerValidator(definition), [definition])
+  const validation = useMemo(() => validator.validate(input), [validator, input])
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (starting) return
     setError('')
-    let payload: unknown = null
-    if (input.trim()) {
-      try { payload = JSON.parse(input) }
-      catch { setError('Trigger input must be valid JSON. Leave it empty to start without input.'); return }
-    }
+    if (validation.errors.length) return
     setStarting(true)
     try {
-      const instance = await api.startWorkflow(id, payload)
+      const instance = await api.startWorkflow(id, validation.payload)
       openInstance(instance.id)
     } catch (error) { setError(message(error)) }
     finally { setStarting(false) }
   }
   return <form className="glass-panel panel input-form" onSubmit={submit}>
-    <details><summary>Trigger input (optional JSON)</summary><label>JSON input<textarea rows={4} value={input} disabled={starting} onChange={event => setInput(event.target.value)} placeholder={'{"name": "Ada"}'} /></label><p className="muted">Leave empty to start without input.</p></details>
-    <button className="btn btn-primary" disabled={starting}>{starting ? 'Starting…' : 'Start workflow'}</button>
+    <h3>Start workflow</h3>
+    <div className="trigger-input-grid">
+      <div><label>JSON trigger input<textarea rows={12} value={input} disabled={starting} aria-invalid={validation.errors.length > 0} aria-describedby="trigger-validation" onChange={event => { setInput(event.target.value); setError('') }} placeholder={'{"name": "Ada"}'} /></label><p className="muted">{validator.schemas.length ? 'Input must satisfy every entry task schema shown.' : 'No entry task declares an input schema. Input is optional.'}</p></div>
+      <div className="trigger-schemas"><h4>Input schema</h4>{validator.schemas.length ? validator.schemas.map(({ taskId, index, schema }) => <label key={`${taskId}:${index}`}>{taskId} · input slot {index + 1}<textarea rows={12} readOnly value={JSON.stringify(schema, null, 2)} /></label>) : <p className="notice">No input schema defined.</p>}</div>
+    </div>
+    <div id="trigger-validation" aria-live="polite">{validation.errors.length > 0 && <ul className="notice error">{validation.errors.map((error, index) => <li key={index}>{error}</li>)}</ul>}</div>
+    <button className="btn btn-primary" disabled={starting || validation.errors.length > 0}>{starting ? 'Starting…' : 'Start workflow'}</button>
     {error && <p className="notice error" role="alert">{error}</p>}
   </form>
 }
@@ -104,7 +109,7 @@ function WorkflowDetails({ api, id, back, openInstance }: { api: Api; id: string
     <Refresh {...state} /><Feedback error={state.error} loading={!state.data} />
     {state.data && <>
       <section className="glass-panel panel"><h2>{diagram?.definition.id ?? id}</h2><p className="muted">{diagram?.definition.description}</p></section>
-      <StartWorkflow api={api} id={id} openInstance={openInstance} />
+      {diagram && <StartWorkflow api={api} id={id} definition={diagram.definition} openInstance={openInstance} />}
       <h2 className="section-title">Workflow diagram</h2>
       <p className="muted diagram-legend">Arrows show data bindings. Diamonds mark verifiers; dashed arrows show explicitly configured rerun targets. Tasks without bindings are independent.</p>
       <section className="glass-panel panel">

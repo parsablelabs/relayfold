@@ -11,6 +11,8 @@
     "test": "node --test tests/*.test.*"
   },
   "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "mermaid": "^11.17.2",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
