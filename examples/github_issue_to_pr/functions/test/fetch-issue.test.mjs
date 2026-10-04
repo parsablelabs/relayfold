@@ -62,6 +62,7 @@ test("rejects unlabeled issues and pull requests before fetching comments", asyn
     { labels: [{ name: "bug" }] },
     { labels: [{ name: "RelayFold" }] },
     { labels: [{ name: "relayfold" }, { name: "relayfold:pr-created" }] },
+    { labels: [{ name: "relayfold" }, { name: "relayfold:human-input-needed" }] },
     { pull_request: {} },
   ]) {
     let calls = 0;

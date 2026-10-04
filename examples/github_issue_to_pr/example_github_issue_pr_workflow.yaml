@@ -8,7 +8,7 @@ id: github-issue-to-pr
 #   "issue_number": 46
 # }
 # The requested issue must have the relayfold label; otherwise fetching fails.
-# Issues labeled relayfold:pr-created also fail fetching before implementation.
+# Issues labeled relayfold:pr-created or relayfold:human-input-needed also fail fetching.
 #
 # The fetch Function and tasks that run gh list gh_token in required_credentials. The worker exposes
 # required credentials as uppercased environment variables during task execution.
@@ -77,6 +77,7 @@ tasks:
           - make the minimum reasonable code and documentation changes needed
           - run focused tests or checks that are relevant to the change
           - if the issue is unclear or a critical implementation decision is underspecified, call ask_user with a specific question
+          - open_questions must list any unresolved human decisions or missing information; use [] when none remain
           - do not create a pull request in this task
 
           Return exactly this JSON shape:
@@ -228,24 +229,30 @@ tasks:
       - gemini_api_key
       - gh_token
 
-  - id: mark-pr-created
+  - id: apply-labels
     timeout_secs: 120
     kind:
       function:
-        ref: github-issue-to-pr.mark_pr_created
+        ref: github.apply_labels
     output_schema:
       type: object
       required:
-        - repository
-        - issue_number
-        - labeled
+        - applied
       properties:
-        repository:
-          type: string
-        issue_number:
-          type: integer
-        labeled:
-          type: boolean
+        applied:
+          type: array
+          items:
+            type: object
+            required: [repository, issue_number, labels]
+            properties:
+              repository:
+                type: string
+              issue_number:
+                type: integer
+              labels:
+                type: array
+                items:
+                  type: string
     required_credentials:
       - gh_token
 
@@ -321,8 +328,10 @@ data_bindings:
   - source_task_id: create-pull-request
     target_task_id: update-github-issue
   - source_task_id: fetch-issue
-    target_task_id: mark-pr-created
+    target_task_id: apply-labels
   - source_task_id: create-pull-request
-    target_task_id: mark-pr-created
-  - source_task_id: mark-pr-created
+    target_task_id: apply-labels
+  - source_task_id: implement-change
+    target_task_id: apply-labels
+  - source_task_id: apply-labels
     target_task_id: update-github-issue

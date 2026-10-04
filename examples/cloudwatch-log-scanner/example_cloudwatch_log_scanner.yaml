@@ -166,7 +166,9 @@ tasks:
           Root-cause reasoning, if possible provide exact main commit, code permalinks https://github.com/<owner>/<repo>/blob/<commit>/<path>#L<line> for the supplied repository, proposed approach, risks and unknowns, and reproduction or investigation steps grounded in evidence. 
           Clearly mark unverified steps.
 
-          Each finding may include labels: ["bug"] only when log and code evidence establish a clear bug. Explain the defect in the issue body. Omit labels or use [] for improvements without a confirmed bug; do not classify uncertain hypotheses as bugs. The publisher always adds relayfold.
+          Assess whether each finding can be implemented immediately from the issue body and repository context, or requires a human decision or missing information. If human input is required, include relayfold:human-input-needed in labels and list the exact questions, missing information, or decisions under Notes. Do not invent product requirements or choose underspecified critical behavior. Under Acceptance Criteria, distinguish the human decisions needed from the implementation tasks that follow. Ordinary implementation choices and routine code investigation do not require this label. Findings that need human input may still be submitted when the evidence supports a concrete improvement.
+
+          Each finding may also include bug in labels only when log and code evidence establish a clear bug. Explain the defect in the issue body; do not classify uncertain hypotheses as bugs. Both labels may be present. Omit labels or use [] when neither applies. The publisher always adds relayfold.
 
           Log masking is handled upstream; use short diagnostic excerpts from the provided samples. Return JSON with commit_sha, findings (fingerprint, title, body, optional labels), and summary explaining actionable findings and skipped/no-improvement cases.
         tools:
@@ -209,11 +211,11 @@ tasks:
                 minLength: 1
               labels:
                 type: array
-                maxItems: 1
+                maxItems: 2
                 uniqueItems: true
                 items:
                   type: string
-                  enum: [bug]
+                  enum: [bug, "relayfold:human-input-needed"]
             additionalProperties: false
         summary:
           type: string
@@ -239,7 +241,7 @@ tasks:
           An empty findings array is valid when the summary explains why no defensible improvement exists; {} is not valid for a nonempty scan.
 
           Verify each finding uses a fingerprint from the scan, fingerprints are unique, and titles and bodies meet the analysis contract. 
-          Optional finding labels may contain only bug, without duplicates. Approve bug only when log and code evidence establish a clear defect explained in the body; reject bug labels based on uncertain hypotheses or general improvements.
+          Optional finding labels may contain only bug and relayfold:human-input-needed, without duplicates. Approve bug only when log and code evidence establish a clear defect explained in the body; reject bug labels based on uncertain hypotheses or general improvements. Independently check whether each finding is immediately implementable: require relayfold:human-input-needed when a critical human decision or missing information blocks implementation, with specific questions under Notes and corresponding prerequisites in Acceptance Criteria. Reject an omitted label when such blockers remain, and reject the label for routine implementation choices or code investigation alone. A finding needing human input is valid when its concrete improvement is evidence-backed.
           Bodies must contain Problem, Goal, Acceptance Criteria, and Notes sections. Check that log evidence matches supplied samples, frequency and severity claims are accurate, hypotheses and deployment uncertainty are explicit, and truncation is disclosed. Require a concrete improvement still applicable to current main, grounded code paths and permalinks for the recorded commit, and actionable acceptance criteria. Reject duplicate root causes or findings already covered by the supplied open relayfold-labeled issues.
 
           Use the shared workspace for read-only inspection when needed. GitHub authentication is provided through GH_TOKEN; never print it. 
@@ -280,7 +282,20 @@ tasks:
         - summary
     required_credentials:
       - gh_token
+  - id: apply-labels
+    timeout_secs: 120
+    kind:
+      function:
+        ref: github.apply_labels
+    output_schema:
+      type: object
+      required: [applied]
+      properties:
+        applied:
+          type: array
 data_bindings:
+  - source_task_id: publish-issues
+    target_task_id: apply-labels
   - source_task_id: scan-cloudwatch
     target_task_id: prune-covered-logs
   - source_task_id: fetch-issues

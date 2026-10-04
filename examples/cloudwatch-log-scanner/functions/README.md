@@ -77,6 +77,8 @@ curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.publish_issues.json
 ```
 
+Also build and register `github.apply_labels` from `examples/functions` before executing this workflow; see that directory's README.
+
 Then register the updated workflow from the repository root. Artifacts are generated
 and ignored by Git; build them from the committed sources and pinned lockfile.
 
@@ -123,7 +125,7 @@ Analysis, verification, and publishing receive this pruned scan. If every patter
 `publish_issues` accepts the pruned scanner output and an accepted verifier envelope
 `{"decision":"complete","output":<analysis>}` in `inputs` (in either order).
 Nonempty analysis must contain `commit_sha`, `summary`, and `findings`.
-Each finding may include `labels: ["bug"]` for a clear bug supported by log and code evidence and checked by the verifier, or omit `labels` (or use `[]`) otherwise. The publisher accepts only this optional label and always adds `relayfold`. Dry-run drafts include the labels that would be published.
+Each finding may include `bug` for a clear code defect and `relayfold:human-input-needed` for critical decisions or missing information that require a human. Both classifications are checked by the verifier. Flagged issues list specific questions under Notes and human prerequisites in Acceptance Criteria. Both labels may be present; omission or `[]` means neither applies. The publisher adds `relayfold` and optional `bug` on creation; the shared `github.apply_labels` step applies the human-input label afterward. Dry-run drafts include all planned labels. Newly created entries include `repository`, `issue_number`, and `human_input_needed` for the shared step. A human adds the missing information in a comment and removes the human-input label to allow the issue-to-PR workflow to proceed.
 Each finding has `fingerprint`, `title`, and `body` with Problem, Goal, Acceptance
 Criteria, and Notes sections. At most three findings are accepted; fingerprints
 must correspond to scanned groups. It checks open and closed issues and returns

@@ -40,7 +40,7 @@ The first task requires one input object with the issue identifiers:
 }
 ```
 
-The requested issue must have the exact `relayfold` label. Issues without that label and pull request numbers fail the fetch task before implementation begins. Issues labeled `relayfold:pr-created` also fail fetching before implementation begins. Open and closed issues are otherwise accepted.
+The requested issue must have the exact `relayfold` label. Issues without that label and pull request numbers fail the fetch task before implementation begins. Issues labeled `relayfold:pr-created` or `relayfold:human-input-needed` also fail fetching before implementation begins. Open and closed issues are otherwise accepted.
 
 ## Flow
 
@@ -51,7 +51,7 @@ flowchart TD
     Implement["implement-change: edit shared repo workspace"]
     Review{"review-implementation accepts?"}
     PR["create-pull-request: commit, push, open PR"]
-    Mark["mark-pr-created: Function adds relayfold:pr-created"]
+    Mark["apply-labels: Function applies workflow status labels"]
     Comment["update-github-issue: final status comment"]
     Done["Completed"]
     Clarify["InputNeeded: ask for clarification"]
@@ -71,20 +71,20 @@ flowchart TD
     PR -. gh failure .-> Failed
 </pre>
 
-1. `fetch-issue` calls `github-issue-to-pr.fetch_issue`, a deterministic Function that reads the issue and all comment pages through the [GitHub REST API](https://docs.github.com/en/rest/issues/issues#get-an-issue). It requires `relayfold`, rejects `relayfold:pr-created`, and returns `repository`, `issue_number`, `issue_url`, `title`, `state`, `body`, and `comments` (comment bodies). It makes no LLM calls. The implementation and review Agents interpret acceptance criteria from the original body and comments.
+1. `fetch-issue` calls `github-issue-to-pr.fetch_issue`, a deterministic Function that reads the issue and all comment pages through the [GitHub REST API](https://docs.github.com/en/rest/issues/issues#get-an-issue). It requires `relayfold`, rejects `relayfold:pr-created` and `relayfold:human-input-needed`, and returns `repository`, `issue_number`, `issue_url`, `title`, `state`, `body`, and `comments` (comment bodies). It makes no LLM calls. The implementation and review Agents interpret acceptance criteria from the original body and comments.
 2. `implement-change` receives the issue details, updates the checkout in the shared `repo` workspace, runs relevant checks, and can pause for clarification when the issue is underspecified.
 3. `review-implementation` checks the implementation against the issue criteria and test results. It can return `continue` with feedback, causing RelayFold to rerun from `implement-change` up to the bounded loop limit.
 4. `create-pull-request` runs after the verifier accepts the implementation, commits and pushes the branch, and creates the PR with `gh pr create`. The PR body includes a full link to the issue it addresses, a change summary, and test results. The Agent checks the published body and adds the issue link if missing, preserving existing content and avoiding duplicate links.
-5. `mark-pr-created` calls `github-issue-to-pr.mark_pr_created`. When `pr_created` is true, it adds `relayfold:pr-created` to the issue, creating the repository label if missing. It uses the [add-labels endpoint](https://docs.github.com/en/rest/issues/labels#add-labels-to-an-issue) to preserve existing labels and verifies the response includes the marker. When no PR was created, it returns `labeled: false` without GitHub calls.
+5. `apply-labels` calls the shared `github.apply_labels` Function. It adds `relayfold:pr-created` when a PR was created, and `relayfold:human-input-needed` when the implementation output has unresolved `open_questions`. It can apply either label or both, creates missing repository labels, and confirms the [add-labels response](https://docs.github.com/en/rest/issues/labels#add-labels-to-an-issue) without replacing existing labels. If neither applies, it returns `applied: []` without GitHub calls.
 6. `update-github-issue` waits for labeling to finish and adds the final status comment. A labeling failure stops the workflow before this comment.
 
-The marker remains after the PR is closed or merged. Remove it deliberately when you want another implementation attempt. This guard prevents later runs from picking up marked issues; it does not lock concurrent runs or discover existing PRs that have no marker. If labeling fails after PR creation, apply the marker before starting another full workflow run.
+For issues labeled `relayfold:human-input-needed`, a human must supply the missing information in an issue comment and remove that label before rerunning. The PR-created marker remains after the PR is closed or merged. Remove it deliberately when you want another implementation attempt. This guard prevents later runs from picking up marked issues; it does not lock concurrent runs or discover existing PRs that have no marker. If labeling fails after PR creation, apply the marker before starting another full workflow run.
 
 All Agent tasks use the same `workspace.group_name: repo` so files produced or edited by one step are visible to later steps.
 
 ## Register the workflow
 
-First build, test, and register both Functions from a local checkout (Node.js 24 or newer; no npm dependencies are required):
+First build, test, and register the fetch Function and shared labeling Function from a local checkout (Node.js 24 or newer; no npm dependencies are required):
 
 ```bash
 cd examples/github_issue_to_pr/functions
@@ -92,8 +92,11 @@ npm test
 export RELAYFOLD_URL=http://localhost:3000
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/github-issue-to-pr.fetch_issue.json
+cd ../../functions
+npm test
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
-  --data-binary @dist/github-issue-to-pr.mark_pr_created.json
+  --data-binary @dist/github.apply_labels.json
+cd ../..
 ```
 
 Then download and register the workflow directly from GitHub:

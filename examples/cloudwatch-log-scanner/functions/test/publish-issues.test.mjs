@@ -42,6 +42,7 @@ test("publishes an issue with evidence and fingerprint using the write credentia
       return reply(
         options.method === "POST"
           ? {
+              number: 1,
               html_url: "https://github.com/example/service/issues/1",
               body: JSON.parse(options.body).body,
             }
@@ -84,15 +85,18 @@ test("dry-run returns a draft and never posts", async () => {
   assert.deepEqual(result.created, []);
 });
 
-test("optional bug label is included in published issues and dry-run drafts", async () => {
-  for (const labels of [["bug"], []]) {
+test("finding labels are published or passed to the shared label step", async () => {
+  for (const labels of [
+    ["bug"], [], ["relayfold:human-input-needed"],
+    ["bug", "relayfold:human-input-needed"],
+  ]) {
     for (const dry_run of [false, true]) {
       const posted = [];
       const run = createPublisher({
         fetch: async (url, options) => {
           if (options.method === "POST") {
             posted.push(JSON.parse(options.body));
-            return reply({ html_url: "created" });
+            return reply({ number: 1, html_url: "created" });
           }
           return reply([]);
         },
@@ -105,7 +109,19 @@ test("optional bug label is included in published issues and dry-run drafts", as
         ],
       });
       const issue = dry_run ? result.drafts[0] : posted[0];
-      assert.deepEqual(issue.labels, ["relayfold", ...labels]);
+      assert.deepEqual(issue.labels, [
+        "relayfold",
+        ...(dry_run ? labels : labels.filter(
+          (label) => label !== "relayfold:human-input-needed",
+        )),
+      ]);
+      if (!dry_run) {
+        assert.equal(result.created[0].issue_number, 1);
+        assert.equal(
+          result.created[0].human_input_needed,
+          labels.includes("relayfold:human-input-needed"),
+        );
+      }
       assert.equal(posted.length, dry_run ? 0 : 1);
     }
   }
@@ -115,7 +131,10 @@ test("rejects unsupported or malformed labels before network calls", async () =>
   const run = createPublisher({
     fetch: () => assert.fail("No network request expected"),
   });
-  for (const labels of [null, "bug", ["enhancement"], ["bug", "bug"]]) {
+  for (const labels of [
+    null, "bug", ["enhancement"], ["bug", "bug"],
+    ["relayfold:human-input-needed", "relayfold:human-input-needed"],
+  ]) {
     await assert.rejects(
       run({
         ...context,

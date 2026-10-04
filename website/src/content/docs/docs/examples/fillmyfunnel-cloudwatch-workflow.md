@@ -19,6 +19,7 @@ flowchart TD
     Analyze["analyze-main: draft findings or return empty object"]
     Verify{"verify-analysis: accept or retry?"}
     Publish["publish-issues: create labeled issues or finish with no work"]
+    Labels["apply-labels: mark issues needing human input"]
     Done["Completed"]
     Failed["Failed: final generation rejected"]
 
@@ -35,7 +36,8 @@ flowchart TD
     Verify -->|"complete + unchanged analysis or empty object"| Publish
     Prune --> Publish
     Verify -->|"continue at retry limit"| Failed
-    Publish --> Done
+    Publish --> Labels
+    Labels --> Done
 </pre>
 
 1. `scan-cloudwatch` uses the AWS SDK to fetch paginated WARN/WARNING/ERROR keyword matches from each explicit region and log group. It normalizes recurring messages, counts occurrences, and passes up to three original samples per pattern to the analysis task.
@@ -45,9 +47,13 @@ flowchart TD
 5. `verify-analysis` is an Agent that reviews the analysis against scan evidence and relevant repository context. It accepts the unchanged analysis or returns actionable feedback to retry `analyze-main`. The loop permits three generations and fails if the last is rejected; scanning is not repeated.
 6. `publish-issues` consumes the accepted verifier output, validates the drafts and checks all existing issues for stable fingerprint markers before submitting them. Each issue includes **Problem**, **Goal**, **Acceptance Criteria**, and **Notes**, with log evidence, code permalinks, root-cause reasoning, and regression-test criteria.
 
+7. `apply-labels` uses the shared `github.apply_labels` Function to add `relayfold:human-input-needed` to newly published issues whose verified findings require human decisions or missing information. It creates the repository label if needed and confirms application. Dry runs and no-work results make no labeling requests.
+
+Analysis and verification assess whether each finding is immediately implementable. Flagged findings must list specific questions under Notes and distinguish human prerequisites from implementation tasks in Acceptance Criteria. Routine implementation choices and code investigation do not require the label. A human supplies the answers in an issue comment and removes `relayfold:human-input-needed`; the issue-to-PR workflow rejects the issue until that label is removed.
+
 New issues receive the `relayfold` label so later runs include them in semantic duplicate inspection. Analysis may also select the optional `bug` label when log and code evidence establish a clear bug, with the defect explained in the issue body and checked by the verifier. General improvements and uncertain hypotheses do not receive `bug`. Dry-run drafts include the labels that would be published. That inspection covers open labeled issues; the publisher also checks fingerprint markers across open and closed issues immediately before creating new ones.
 
-An empty scan, or a scan whose patterns are all covered by open issues, completes successfully: the publisher accepts the empty analysis, returns empty `created` and `skipped` lists with a no-work summary, and makes no GitHub requests. All six tasks still execute. Both Agents still make LLM API calls for the no-work response; pruning saves input tokens and repository inspection rather than bypassing Agent execution. The analysis Agent decides whether analysis is needed from the scan input, and the verifier confirms the no-work result without using tools.
+An empty scan, or a scan whose patterns are all covered by open issues, completes successfully: the publisher accepts the empty analysis, returns empty `created` and `skipped` lists with a no-work summary, and makes no GitHub requests. All seven tasks still execute. Both Agents still make LLM API calls for the no-work response; pruning saves input tokens and repository inspection rather than bypassing Agent execution. The analysis Agent decides whether analysis is needed from the scan input, and the verifier confirms the no-work result without using tools.
 
 RelayFold requires a verifier decision envelope. On acceptance, `verify-analysis` returns `{"decision":"complete","output":<unchanged analysis>}`; for no work, `output` is `{}`. On rejection it returns `{"decision":"continue","feedback":"..."}`. The publisher receives the scan and verifier envelope, extracts `output`, and completes without GitHub requests when that object is empty. See [Bounded Loops](/relayfold/docs/concepts/bounded-loops/).
 
@@ -95,14 +101,14 @@ Grouping normalizes IDs and numbers only in an internal signature, not in sample
 ## Build, test, and register Functions
 
 The workflow references `cloudwatch-log-scanner.scan_cloudwatch`, `cloudwatch-log-scanner.fetch_issues`,
-`cloudwatch-log-scanner.prune_covered_logs`, and `cloudwatch-log-scanner.publish_issues`. Their standalone source, manifest, tests, and
+`cloudwatch-log-scanner.prune_covered_logs`, and `cloudwatch-log-scanner.publish_issues`. The shared label step references `github.apply_labels` from [`examples/functions`](https://github.com/parsablelabs/relayfold/tree/main/examples/functions). The scanner Functions' standalone source, manifest, tests, and
 artifact build script live in
 [`examples/cloudwatch-log-scanner/functions`](https://github.com/parsablelabs/relayfold/tree/main/examples/cloudwatch-log-scanner/functions).
 Issue fingerprint markers use the `cloudwatch-log-scanner-cloudwatch` prefix.
 Issues created with the previous prefix no longer match the publisher's exact
 fingerprint check; analysis still compares the fetched open issues for duplicates.
 
-Register all four Functions before executing the workflow:
+Register the four scanner Functions and the shared labeling Function before executing the workflow:
 
 ```bash
 cd examples/cloudwatch-log-scanner/functions
@@ -117,7 +123,11 @@ curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.prune_covered_logs.json
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.publish_issues.json
-cd ../../..
+cd ../../functions
+npm test
+curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
+  --data-binary @dist/github.apply_labels.json
+cd ../..
 ```
 
 Tests assert nonempty scanner results from known log fixtures, returned counts

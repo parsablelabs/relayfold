@@ -38,12 +38,9 @@ export function createIssueFetcher({ fetch = globalThis.fetch } = {}) {
       throw new Error("Requested number identifies a pull request, not an issue");
     if (!issue.labels.some((label) => (label?.name ?? label) === "relayfold"))
       throw new Error('Issue must have the "relayfold" label');
-    if (
-      issue.labels.some(
-        (label) => (label?.name ?? label) === "relayfold:pr-created",
-      )
-    )
-      throw new Error('Issue already has the "relayfold:pr-created" label');
+    for (const blocked of ["relayfold:pr-created", "relayfold:human-input-needed"])
+      if (issue.labels.some((label) => (label?.name ?? label) === blocked))
+        throw new Error(`Issue is excluded by the "${blocked}" label`);
 
     const comments = [];
     for (let page = 1; ; page++) {

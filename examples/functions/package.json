@@ -1,0 +1,20 @@
+{
+  "name": "@relayfold/shared-example-functions",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "npm run build && node ../github_issue_to_pr/functions/scripts/build.mjs && node --test test/*.test.mjs"
+  },
+  "relayfold": {
+    "functions": [
+      {
+        "id": "github.apply_labels",
+        "source": "src/apply-labels.mjs",
+        "dependencies": []
+      }
+    ]
+  }
+}
