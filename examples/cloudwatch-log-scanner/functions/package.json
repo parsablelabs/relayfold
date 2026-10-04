@@ -24,6 +24,11 @@
         "dependencies": []
       },
       {
+        "id": "cloudwatch-log-scanner.prune_covered_logs",
+        "source": "src/prune-covered-logs.mjs",
+        "dependencies": []
+      },
+      {
         "id": "cloudwatch-log-scanner.publish_issues",
         "source": "src/publish-issues.mjs",
         "dependencies": []

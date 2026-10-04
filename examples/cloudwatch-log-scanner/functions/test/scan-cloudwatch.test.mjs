@@ -241,7 +241,10 @@ test("generated scanner uses the real AWS SDK to return results from a local Clo
   // deserialization, and the registry artifact's actual exported implementation.
   const artifact = JSON.parse(
     await readFile(
-      new URL("../dist/cloudwatch-log-scanner.scan_cloudwatch.json", import.meta.url),
+      new URL(
+        "../dist/cloudwatch-log-scanner.scan_cloudwatch.json",
+        import.meta.url,
+      ),
     ),
   );
   assert.deepEqual(artifact.dependencies, [

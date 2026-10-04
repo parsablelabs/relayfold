@@ -36,6 +36,13 @@ export function createPublisher({ fetch = globalThis.fetch } = {}) {
         throw new Error("Unknown or repeated finding fingerprint");
       used.add(finding.fingerprint);
       if (
+        finding.labels !== undefined &&
+        (!Array.isArray(finding.labels) ||
+          finding.labels.length > 1 ||
+          finding.labels.some((label) => label !== "bug"))
+      )
+        throw new Error("Optional finding labels may contain only bug once");
+      if (
         !finding.title ||
         finding.title.length > 200 ||
         !finding.body ||
@@ -84,7 +91,9 @@ export function createPublisher({ fetch = globalThis.fetch } = {}) {
       drafts = [];
     for (const finding of analysis.findings) {
       const marker =
-        "<!-- cloudwatch-log-scanner-cloudwatch:" + finding.fingerprint + " -->";
+        "<!-- cloudwatch-log-scanner-cloudwatch:" +
+        finding.fingerprint +
+        " -->";
       const duplicate = issues.find((i) => (i.body ?? "").includes(marker));
       if (duplicate) {
         skipped.push({
@@ -117,8 +126,9 @@ export function createPublisher({ fetch = globalThis.fetch } = {}) {
             .join(", ") +
           ".";
       }
+      const labels = ["relayfold", ...(finding.labels ?? [])];
       if (scan.dry_run) {
-        drafts.push({ title: finding.title, body });
+        drafts.push({ title: finding.title, body, labels });
         continue;
       }
       // Do not automatically retry a POST: an uncertain response may already have created the issue.
@@ -127,7 +137,7 @@ export function createPublisher({ fetch = globalThis.fetch } = {}) {
         body: JSON.stringify({
           title: finding.title,
           body,
-          labels: ["relayfold"],
+          labels,
         }),
       });
       issues.push(issue);

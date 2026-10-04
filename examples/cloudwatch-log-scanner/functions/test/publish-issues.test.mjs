@@ -80,7 +80,53 @@ test("dry-run returns a draft and never posts", async () => {
     inputs: [{ ...scan, dry_run: true }, accepted(analysis)],
   });
   assert.equal(result.drafts.length, 1);
+  assert.deepEqual(result.drafts[0].labels, ["relayfold"]);
   assert.deepEqual(result.created, []);
+});
+
+test("optional bug label is included in published issues and dry-run drafts", async () => {
+  for (const labels of [["bug"], []]) {
+    for (const dry_run of [false, true]) {
+      const posted = [];
+      const run = createPublisher({
+        fetch: async (url, options) => {
+          if (options.method === "POST") {
+            posted.push(JSON.parse(options.body));
+            return reply({ html_url: "created" });
+          }
+          return reply([]);
+        },
+      });
+      const result = await run({
+        ...context,
+        inputs: [
+          { ...scan, dry_run },
+          accepted({ ...analysis, findings: [{ ...finding, labels }] }),
+        ],
+      });
+      const issue = dry_run ? result.drafts[0] : posted[0];
+      assert.deepEqual(issue.labels, ["relayfold", ...labels]);
+      assert.equal(posted.length, dry_run ? 0 : 1);
+    }
+  }
+});
+
+test("rejects unsupported or malformed labels before network calls", async () => {
+  const run = createPublisher({
+    fetch: () => assert.fail("No network request expected"),
+  });
+  for (const labels of [null, "bug", ["enhancement"], ["bug", "bug"]]) {
+    await assert.rejects(
+      run({
+        ...context,
+        inputs: [
+          scan,
+          accepted({ ...analysis, findings: [{ ...finding, labels }] }),
+        ],
+      }),
+      /Optional finding labels/,
+    );
+  }
 });
 
 test("checks subsequent pages and skips closed duplicate issues", async () => {
@@ -140,7 +186,10 @@ test("failed duplicate inspection never creates an issue and uncertain POST is n
 test("generated publisher is dependency-free and returns the empty-findings result", async () => {
   const artifact = JSON.parse(
     await readFile(
-      new URL("../dist/cloudwatch-log-scanner.publish_issues.json", import.meta.url),
+      new URL(
+        "../dist/cloudwatch-log-scanner.publish_issues.json",
+        import.meta.url,
+      ),
     ),
   );
   assert.deepEqual(artifact.dependencies, []);

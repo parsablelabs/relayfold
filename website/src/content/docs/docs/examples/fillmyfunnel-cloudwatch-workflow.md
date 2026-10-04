@@ -3,7 +3,7 @@ title: CloudWatch Log Scanner
 description: Periodically inspect warnings and errors against main and file actionable GitHub issues without editing application code.
 ---
 
-[`examples/cloudwatch-log-scanner/example_cloudwatch_workflow.yaml`](https://github.com/parsablelabs/relayfold/blob/main/examples/cloudwatch-log-scanner/example_cloudwatch_workflow.yaml)
+[`examples/cloudwatch-log-scanner/example_cloudwatch_log_scanner.yaml`](https://github.com/parsablelabs/relayfold/blob/main/examples/cloudwatch-log-scanner/example_cloudwatch_log_scanner.yaml)
 scans selected CloudWatch log groups, clones the input `repository` at current
 `main`, and submits detailed issues when logs reveal a concrete improvement.
 It makes no application code changes and creates no branches, commits, or pull requests.
@@ -15,6 +15,7 @@ flowchart TD
     Input["Input: repository + CloudWatch targets"]
     Scan["scan-cloudwatch: collect log evidence"]
     Issues["fetch-issues: open issues labeled relayfold"]
+    Prune["prune-covered-logs: remove fingerprints covered by open issues"]
     Analyze["analyze-main: draft findings or return empty object"]
     Verify{"verify-analysis: accept or retry?"}
     Publish["publish-issues: create labeled issues or finish with no work"]
@@ -23,27 +24,30 @@ flowchart TD
 
     Input --> Scan
     Input --> Issues
-    Scan --> Analyze
+    Scan --> Prune
+    Issues --> Prune
+    Prune --> Analyze
     Issues --> Analyze
-    Scan --> Verify
+    Prune --> Verify
     Issues --> Verify
     Analyze --> Verify
     Verify -. "continue + feedback; up to 3 generations" .-> Analyze
     Verify -->|"complete + unchanged analysis or empty object"| Publish
-    Scan --> Publish
+    Prune --> Publish
     Verify -->|"continue at retry limit"| Failed
     Publish --> Done
 </pre>
 
 1. `scan-cloudwatch` uses the AWS SDK to fetch paginated WARN/WARNING/ERROR keyword matches from each explicit region and log group. It normalizes recurring messages, counts occurrences, and passes up to three original samples per pattern to the analysis task.
 2. `fetch-issues` runs independently of scanning, fetching all open issues labeled `relayfold` in the input repository. It excludes pull requests and fails if it cannot retrieve the complete list.
-3. `analyze-main` first inspects the scan. When `groups` is empty, it returns `{}` without tools or repository inspection. Otherwise, it clones the repository, records the main commit, and traces symptoms through its application services. It checks actual severity, current code, and the supplied open issues labeled `relayfold`, comparing root causes rather than titles. It waits for both scanning and issue fetching. It drafts at most three distinct, actionable improvements, or returns no findings with an explanation.
-4. `verify-analysis` is an Agent that reviews the analysis against scan evidence and relevant repository context. It accepts the unchanged analysis or returns actionable feedback to retry `analyze-main`. The loop permits three generations and fails if the last is rejected; scanning is not repeated.
-5. `publish-issues` consumes the accepted verifier output, validates the drafts and checks all existing issues for stable fingerprint markers before submitting them. Each issue includes **Problem**, **Goal**, **Acceptance Criteria**, and **Notes**, with log evidence, code permalinks, root-cause reasoning, and regression-test criteria.
+3. `prune-covered-logs` deterministically removes log patterns whose exact fingerprints appear in the fetched open issues, before any LLM analysis. It uses the existing issue markers and needs no separate persistent state. Only unmatched patterns and their samples reach analysis, verification, and publishing. The scan window and truncation information are preserved; `total_events` still counts the original scan before pruning. Unmarked or closed issues do not suppress patterns at this stage.
+4. `analyze-main` first inspects the scan. When `groups` is empty, it returns `{}` without tools or repository inspection. Otherwise, it clones the repository, records the main commit, and traces symptoms through its application services. It checks actual severity, current code, and the supplied open issues labeled `relayfold`, comparing root causes rather than titles. It waits for both scanning and issue fetching. It drafts at most three distinct, actionable improvements, or returns no findings with an explanation.
+5. `verify-analysis` is an Agent that reviews the analysis against scan evidence and relevant repository context. It accepts the unchanged analysis or returns actionable feedback to retry `analyze-main`. The loop permits three generations and fails if the last is rejected; scanning is not repeated.
+6. `publish-issues` consumes the accepted verifier output, validates the drafts and checks all existing issues for stable fingerprint markers before submitting them. Each issue includes **Problem**, **Goal**, **Acceptance Criteria**, and **Notes**, with log evidence, code permalinks, root-cause reasoning, and regression-test criteria.
 
-New issues receive the `relayfold` label so later runs include them in semantic duplicate inspection. That inspection covers open labeled issues; the publisher also checks fingerprint markers across open and closed issues immediately before creating new ones.
+New issues receive the `relayfold` label so later runs include them in semantic duplicate inspection. Analysis may also select the optional `bug` label when log and code evidence establish a clear bug, with the defect explained in the issue body and checked by the verifier. General improvements and uncertain hypotheses do not receive `bug`. Dry-run drafts include the labels that would be published. That inspection covers open labeled issues; the publisher also checks fingerprint markers across open and closed issues immediately before creating new ones.
 
-An empty scan completes successfully: the publisher accepts the empty analysis, returns empty `created` and `skipped` lists with a no-work summary, and makes no GitHub requests. All five tasks still execute. The analysis Agent decides whether analysis is needed from the scan input, and the verifier confirms the no-work result without using tools.
+An empty scan, or a scan whose patterns are all covered by open issues, completes successfully: the publisher accepts the empty analysis, returns empty `created` and `skipped` lists with a no-work summary, and makes no GitHub requests. All six tasks still execute. Both Agents still make LLM API calls for the no-work response; pruning saves input tokens and repository inspection rather than bypassing Agent execution. The analysis Agent decides whether analysis is needed from the scan input, and the verifier confirms the no-work result without using tools.
 
 RelayFold requires a verifier decision envelope. On acceptance, `verify-analysis` returns `{"decision":"complete","output":<unchanged analysis>}`; for no work, `output` is `{}`. On rejection it returns `{"decision":"continue","feedback":"..."}`. The publisher receives the scan and verifier envelope, extracts `output`, and completes without GitHub requests when that object is empty. See [Bounded Loops](/relayfold/docs/concepts/bounded-loops/).
 
@@ -90,15 +94,15 @@ Grouping normalizes IDs and numbers only in an internal signature, not in sample
 
 ## Build, test, and register Functions
 
-The workflow references `cloudwatch-log-scanner.scan_cloudwatch`, `cloudwatch-log-scanner.fetch_issues`, and
-`cloudwatch-log-scanner.publish_issues`. Their standalone source, manifest, tests, and
+The workflow references `cloudwatch-log-scanner.scan_cloudwatch`, `cloudwatch-log-scanner.fetch_issues`,
+`cloudwatch-log-scanner.prune_covered_logs`, and `cloudwatch-log-scanner.publish_issues`. Their standalone source, manifest, tests, and
 artifact build script live in
 [`examples/cloudwatch-log-scanner/functions`](https://github.com/parsablelabs/relayfold/tree/main/examples/cloudwatch-log-scanner/functions).
 Issue fingerprint markers use the `cloudwatch-log-scanner-cloudwatch` prefix.
 Issues created with the previous prefix no longer match the publisher's exact
 fingerprint check; analysis still compares the fetched open issues for duplicates.
 
-Register all three Functions before executing the workflow:
+Register all four Functions before executing the workflow:
 
 ```bash
 cd examples/cloudwatch-log-scanner/functions
@@ -109,6 +113,8 @@ curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.scan_cloudwatch.json
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.fetch_issues.json
+curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
+  --data-binary @dist/cloudwatch-log-scanner.prune_covered_logs.json
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.publish_issues.json
 cd ../../..
@@ -146,7 +152,7 @@ See the Function workspace README for contracts and test details.
 ```bash
 export RELAYFOLD_URL=http://localhost:3000
 curl -fsS -X POST "$RELAYFOLD_URL/workflow-def" \
-  --data-binary @examples/cloudwatch-log-scanner/example_cloudwatch_workflow.yaml
+  --data-binary @examples/cloudwatch-log-scanner/example_cloudwatch_log_scanner.yaml
 ```
 
 Choose the actual log groups and regions from your deployed AWS environment;

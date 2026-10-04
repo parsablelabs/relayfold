@@ -109,7 +109,10 @@ test("rejects invalid repositories before network requests", async () => {
 test("generated issue fetcher runs with injected GitHub responses", async () => {
   const artifact = JSON.parse(
     await readFile(
-      new URL("../dist/cloudwatch-log-scanner.fetch_issues.json", import.meta.url),
+      new URL(
+        "../dist/cloudwatch-log-scanner.fetch_issues.json",
+        import.meta.url,
+      ),
       "utf8",
     ),
   );

@@ -1,11 +1,12 @@
 # CloudWatch Log Scanner Functions
 
-Standalone Functions for `examples/cloudwatch-log-scanner/example_cloudwatch_workflow.yaml`.
+Standalone Functions for `examples/cloudwatch-log-scanner/example_cloudwatch_log_scanner.yaml`.
 The workflow references these registry IDs:
 
 | Function ID                    | Source                    | Credentials                                                                  | Runtime dependencies                       |
 | ------------------------------ | ------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------ |
 | `cloudwatch-log-scanner.scan_cloudwatch` | `src/scan-cloudwatch.mjs` | `aws_access_key_id`, `aws_secret_access_key`, optionally `aws_session_token` | `@aws-sdk/client-cloudwatch-logs@3.1146.0` |
+| `cloudwatch-log-scanner.prune_covered_logs` | `src/prune-covered-logs.mjs` | None | None |
 | `cloudwatch-log-scanner.fetch_issues` | `src/fetch-issues.mjs` | `gh_token` | None |
 | `cloudwatch-log-scanner.publish_issues`  | `src/publish-issues.mjs`  | `gh_token`                                                                   | None                                       |
 
@@ -30,7 +31,7 @@ a localhost CloudWatch protocol server, verifying it returns warning/error data
 through the SDK's signed request and paginated response path. Allow localhost
 socket binding when running these tests in a sandbox.
 
-No automated test contacts AWS or GitHub. All three generated Function entry points
+No automated test contacts AWS or GitHub. All four generated Function entry points
 are exercised. The runtime exports default functions with RelayFold's normal
 `{ inputs, credentials, workspacePath }` context. The named `createScanner` and
 `createPublisher`, and `createIssueFetcher` factories expose side effects for tests; workflows use the
@@ -70,6 +71,8 @@ curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.scan_cloudwatch.json
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.fetch_issues.json
+curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
+  --data-binary @dist/cloudwatch-log-scanner.prune_covered_logs.json
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.publish_issues.json
 ```
@@ -113,9 +116,14 @@ normalized only in the internal grouping signature; samples are not normalized.
 
 `fetch_issues` reads `inputs[0].repository` and returns `{ repository, issues }`. It fetches every page of open GitHub issues labeled `relayfold`, excludes pull requests, and returns only `number`, `title`, `body`, and `html_url` per issue. GitHub failures or pagination-limit exhaustion fail the task rather than returning an incomplete list. It runs independently of scanning; analysis and verification receive both results. Their semantic duplicate checks cover this open labeled list; the publisher retains its final fingerprint check across open and closed issues. Published issues receive the `relayfold` label.
 
-`publish_issues` accepts the scanner output and an accepted verifier envelope
+`prune_covered_logs` receives the scan and fetched open issues in either order, requires matching repositories, and removes groups whose fingerprints appear in exact current issue markers. It preserves all other scan metadata, including `total_events` (the count before pruning), samples for remaining groups, and truncation information. It has no credentials, network calls, or persistent cache. Only open issues labeled `relayfold` from `fetch_issues` participate; unmarked and closed issues do not suppress patterns at this stage.
+
+Analysis, verification, and publishing receive this pruned scan. If every pattern is covered, both Agents return their no-work outputs without inspecting the repository. They still make LLM calls; pruning reduces input and inspection work rather than bypassing Agent execution.
+
+`publish_issues` accepts the pruned scanner output and an accepted verifier envelope
 `{"decision":"complete","output":<analysis>}` in `inputs` (in either order).
 Nonempty analysis must contain `commit_sha`, `summary`, and `findings`.
+Each finding may include `labels: ["bug"]` for a clear bug supported by log and code evidence and checked by the verifier, or omit `labels` (or use `[]`) otherwise. The publisher accepts only this optional label and always adds `relayfold`. Dry-run drafts include the labels that would be published.
 Each finding has `fingerprint`, `title`, and `body` with Problem, Goal, Acceptance
 Criteria, and Notes sections. At most three findings are accepted; fingerprints
 must correspond to scanned groups. It checks open and closed issues and returns
