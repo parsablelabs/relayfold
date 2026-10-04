@@ -96,6 +96,7 @@ tasks:
       - gh_token
   - id: prune-covered-logs
     timeout_secs: 60
+    required_credentials: []
     kind:
       function:
         ref: cloudwatch-log-scanner.prune_covered_logs
@@ -284,6 +285,7 @@ tasks:
       - gh_token
   - id: apply-labels
     timeout_secs: 120
+    required_credentials: []
     kind:
       function:
         ref: github.apply_labels
