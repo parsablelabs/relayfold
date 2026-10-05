@@ -1,0 +1,44 @@
+{
+  "name": "@relayfold/cloudwatch-log-scanner-functions",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "test:live": "node scripts/scan-live.mjs",
+    "format": "prettier --write \"{src,scripts,test}/**/*.{js,mjs,cjs}\""
+  },
+  "relayfold": {
+    "functions": [
+      {
+        "id": "cloudwatch-log-scanner.scan_cloudwatch",
+        "source": "src/scan-cloudwatch.mjs"
+      },
+      {
+        "id": "cloudwatch-log-scanner.fetch_issues",
+        "source": "src/fetch-issues.mjs",
+        "dependencies": []
+      },
+      {
+        "id": "cloudwatch-log-scanner.prune_covered_logs",
+        "source": "src/prune-covered-logs.mjs",
+        "dependencies": []
+      },
+      {
+        "id": "cloudwatch-log-scanner.publish_issues",
+        "source": "src/publish-issues.mjs",
+        "dependencies": []
+      }
+    ]
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudwatch-logs": "3.1146.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.9"
+  }
+}

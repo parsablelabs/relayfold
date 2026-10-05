@@ -216,6 +216,30 @@ See [Task Credentials](/relayfold/docs/operations/credentials/),
 [Worker Host Pinning](/relayfold/docs/operations/worker-host-pinning/) for the
 state and continuity model.
 
+### Repair npm cache permissions
+
+Function dependency installation uses `/home/relayfold/.cache/npm`. If npm
+reports `EACCES` or root-owned cache files, repair the existing cache mount
+using the worker's runtime UID and GID (both default to `10001`). For the
+repository's development Compose stack, run from the repository root:
+
+```bash
+docker compose stop worker
+docker compose run --rm --no-deps --user 0:0 --cap-add CHOWN \
+  --entrypoint chown worker -R 10001:10001 /home/relayfold/.cache/npm
+docker compose up -d --build worker
+```
+
+For a packaged deployment, supply its Compose file and environment file to
+these commands, use its updated worker image, and substitute its configured
+`RELAYFOLD_WORKER_UID` and `RELAYFOLD_WORKER_GID` if different. The temporary
+repair container changes only npm cache ownership; the normal worker remains
+unprivileged. Updated worker images install packages as the worker user so
+new cache files have the correct owner. After repair, use the
+[task retry endpoint](/relayfold/docs/concepts/workflow-lifecycle/#retry) to
+requeue the failed task in the existing workflow, or start a new workflow run.
+The failed run does not automatically retry.
+
 ## Understand the worker trust boundary
 
 A worker container is a deployment boundary, not a per-task security sandbox.

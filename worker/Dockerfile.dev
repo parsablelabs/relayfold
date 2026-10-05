@@ -23,7 +23,9 @@ RUN addgroup -g 10001 relayfold \
     && chown relayfold:relayfold /app /home/relayfold /home/relayfold/.relayfold /home/relayfold/.cache /home/relayfold/.pi /workspaces
 
 COPY --chown=relayfold:relayfold package*.json ./
+USER relayfold
 RUN npm install
+USER root
 RUN corepack enable
 COPY --from=builder --chown=relayfold:relayfold /app/dist ./dist
 

@@ -1,0 +1,22 @@
+{
+  "name": "@relayfold/github-issue-to-pr-functions",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "relayfold": {
+    "functions": [
+      {
+        "id": "github-issue-to-pr.fetch_issue",
+        "source": "src/fetch-issue.mjs",
+        "dependencies": []
+      }
+    ]
+  }
+}
