@@ -2513,9 +2513,28 @@ async fn early_exit_retains_prior_outputs_and_running_attempts_and_waits_for_the
         .commit_events(
             &crate::core::namespace::test_namespace(),
             &id,
-            vec![WorkflowInstanceEvent::TaskStatusChanged {
+            vec![
+                WorkflowInstanceEvent::TaskStatusChanged {
+                    task_attempt_id: "running[1]".into(),
+                    status: TaskStatus::InputNeeded {
+                        input_request: "confirm report context".into(),
+                    },
+                },
+                WorkflowInstanceEvent::WorkflowStatusChanged {
+                    status: WorkflowStatus::InputNeeded,
+                },
+            ],
+        )
+        .await
+        .unwrap();
+    manager
+        .commit_events(
+            &crate::core::namespace::test_namespace(),
+            &id,
+            vec![WorkflowInstanceEvent::HumanInputSubmitted {
                 task_attempt_id: "running[1]".into(),
-                status: TaskStatus::Completed,
+                continuation_task_attempt_id: "running[2]".into(),
+                submitted_input: json!("confirmed"),
             }],
         )
         .await
@@ -2531,7 +2550,10 @@ async fn early_exit_retains_prior_outputs_and_running_attempts_and_waits_for_the
         .unwrap()
         .unwrap();
     assert_eq!(finished.status, WorkflowStatus::Completed);
-    assert_eq!(*dispatcher.calls.lock().unwrap(), vec!["exit"]);
+    assert_eq!(finished.tasks["pending[1]"].status, TaskStatus::Skipped);
+    assert_eq!(finished.tasks["running[2]"].status, TaskStatus::Completed);
+    assert!(!finished.tasks["running[2]"].early_exit);
+    assert_eq!(*dispatcher.calls.lock().unwrap(), vec!["exit", "running"]);
 }
 
 #[tokio::test]
@@ -2586,5 +2608,122 @@ async fn skipped_verifier_slices_complete_without_acceptance_or_new_generations(
             initialized_before_exit
         );
         assert_eq!(*dispatcher.calls.lock().unwrap(), vec!["a-exit"]);
+    }
+}
+
+#[tokio::test]
+async fn verifier_can_trigger_exit_without_retrying_or_exhaustion_failure() {
+    let dispatcher = Arc::new(ExitOutputDispatcher {
+        output: json!({"decision":"continue", "feedback":"retry normally", "workflow_exit_reason":"report no longer needed"}),
+        calls: StdMutex::new(vec![]),
+    });
+    let engine = make_engine_with_dispatcher(dispatcher.clone());
+    let mut verifier = agent_verifier_task_with_policy("verify", None, 1, false);
+    verifier.control.as_mut().unwrap().allow_early_exit = true;
+    let id = setup(
+        &engine,
+        WorkflowDef {
+            id: "verifier-exit".into(),
+            description: String::new(),
+            tasks: vec![verifier],
+            data_bindings: vec![],
+        },
+    )
+    .await;
+    engine
+        .run_workflow_instance(&crate::core::namespace::test_namespace(), id.clone())
+        .await
+        .unwrap();
+    let instance = engine
+        .storage
+        .get_workflow_instance(&crate::core::namespace::test_namespace(), &id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(instance.status, WorkflowStatus::Completed);
+    let attempt = &instance.tasks["verify[1]"];
+    assert!(attempt.early_exit);
+    assert_eq!(attempt.status, TaskStatus::Completed);
+    assert_eq!(
+        attempt.satisfaction_status,
+        TaskSatisfactionStatus::Unsatisfied
+    );
+    assert_eq!(
+        attempt.verifier_metadata.as_ref().unwrap().decision,
+        Some(VerifierDecision::Continue)
+    );
+    assert_eq!(instance.verifier_states["verify"].latest_generation, 1);
+    assert_eq!(*dispatcher.calls.lock().unwrap(), vec!["verify"]);
+}
+
+#[tokio::test]
+async fn independent_verifier_continues_with_skipped_consumer_after_exit() {
+    for has_consumer in [true, false] {
+        let engine = make_engine_with_dispatcher(Arc::new(ContinueThenCompleteDispatcher));
+        let def = WorkflowDef {
+            id: "continue-after-exit".into(),
+            description: String::new(),
+            tasks: vec![
+                task_def("exit", json!({"type":"object"})),
+                agent_verifier_task("verify", None),
+                task_def("consumer", json!({"type":"object"})),
+            ],
+            data_bindings: if has_consumer {
+                vec![DataBinding {
+                    source_task_id: "verify".into(),
+                    target_task_id: "consumer".into(),
+                }]
+            } else {
+                vec![]
+            },
+        };
+        let id = setup(&engine, def).await;
+        let manager = WorkflowStateManager::new(engine.storage.clone());
+        manager
+            .commit_events(
+                &crate::core::namespace::test_namespace(),
+                &id,
+                vec![
+                    WorkflowInstanceEvent::TaskMaterialized {
+                        task_attempt_id: "exit[1]".into(),
+                        task: TaskInstance {
+                            status: TaskStatus::Completed,
+                            early_exit: true,
+                            ..pending_task_instance("exit")
+                        },
+                    },
+                    WorkflowInstanceEvent::TaskMaterialized {
+                        task_attempt_id: "consumer[1]".into(),
+                        task: TaskInstance {
+                            status: TaskStatus::Skipped,
+                            ..pending_task_instance("consumer")
+                        },
+                    },
+                    WorkflowInstanceEvent::TaskMaterialized {
+                        task_attempt_id: "verify[1]".into(),
+                        task: pending_task_instance("verify"),
+                    },
+                ],
+            )
+            .await
+            .unwrap();
+        // Model the retry work permitted to finish an in-flight independent verifier.
+        engine
+            .run_workflow_instance(&crate::core::namespace::test_namespace(), id.clone())
+            .await
+            .unwrap();
+        let instance = engine
+            .storage
+            .get_workflow_instance(&crate::core::namespace::test_namespace(), &id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(instance.status, WorkflowStatus::Completed);
+        assert_eq!(instance.tasks["consumer[1]"].status, TaskStatus::Skipped);
+        assert_eq!(instance.tasks["verify[2]"].status, TaskStatus::Completed);
+        assert_eq!(
+            instance.verifier_states["verify"].status,
+            VerifierStateStatus::Accepted
+        );
     }
 }

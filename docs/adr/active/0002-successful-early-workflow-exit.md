@@ -42,14 +42,32 @@ The control has no `reason` field. A required static explanation would repeat in
 
 Persist the triggering task attempt ID and the configured JSON Pointer in an `early_completion_requested` workflow event, and expose them through workflow event inspection. Do not persist a separate early-exit field on the workflow snapshot or a dedicated database column. Scheduling and completion use task states: pending attempts become `Skipped`, and the workflow completes when every relevant attempt is `Completed` or `Skipped`. Skipped verifier slices must not create further generations or require acceptance. Together with preserved task outputs, these identify why the workflow ended early. Inspection can explain, for example, that `prune-patterns[1]` returned `true` at `/no_work`. Workflow authors can include a dynamic explanation in the ordinary task output when needed; the control does not require a separate explanation contract.
 
-## Outstanding decisions
+## Remaining decision
 
-- How a task still running after an early-exit request affects the workflow if it requests human input.
-- Whether early exit is allowed on verifier tasks or inside verifier retry slices, and how it interacts with acceptance, satisfaction, and future generations. Restricting it in these locations was suggested but has not been agreed.
-- The ordering of early completion and an operator pause that arrives while the triggering task is running.
+The ordering of early completion and an operator pause that arrives while the
+triggering task is running remains open. Preserve the existing pause behavior
+until this decision is settled.
 
-These questions remain open and must be settled before implementing the affected behavior.
+## Lifecycle decisions (2026-10-05)
 
+An already-running task may request human input after early exit. The workflow
+waits for that input and allows its continuation to finish; skipped downstream
+attempts stay skipped. Normal execution failure still fails the workflow.
+
+Tasks inside verifier slices, including verifier tasks, may trigger early exit.
+Pending attempts are skipped. A slice containing a skipped attempt or a task
+attempt with `early_exit: true` is interrupted: it creates no further generations
+and requires no verifier acceptance for successful workflow completion. If a
+verifier in that slice finishes with `continue`, preserve the result and feedback,
+keep that generation unsatisfied, and do not advance generations or apply
+retry-exhaustion failure to the interrupted slice.
+
+An independent verifier already running when exit occurs retains normal retries,
+acceptance, and exhaustion behavior if its own slice is uninterrupted. This applies
+to terminal verifiers and verifiers whose consumers were skipped; do not inspect
+consumers to suppress retries. These retries and human-input continuations are
+exceptions to stopping new task dispatch after early exit. Pending verifier
+attempts skipped by exit are not dispatched.
 
 ## Addendum: task-provided exit reason (2026-10-05)
 

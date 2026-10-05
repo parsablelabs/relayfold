@@ -192,7 +192,7 @@ impl WorkflowEngine {
         while progress_made {
             progress_made = false;
 
-            let generation_events = self.materialize_eligible_generation_events(
+            let generation_events = self.materialize_eligible_initial_generation_events(
                 &workflow_instance,
                 &workflow_def,
                 &loop_slices,
@@ -570,15 +570,25 @@ impl WorkflowEngine {
                                         return Err(error);
                                     }
                                 };
+
+                                // Include this result's exit flag and skips when deciding retries.
+                                let result_instance =
+                                    crate::core::workflow::events::reduce_workflow_instance_events(
+                                        Some(workflow_instance.clone()),
+                                        &events,
+                                    )?;
+
                                 let verifier_transition = self.verifier_result_transition(
-                                    &workflow_instance,
+                                    &result_instance,
                                     &workflow_def,
                                     &loop_slices,
                                     &task_attempt_id,
                                     &output,
                                     verifier_result,
                                 )?;
+
                                 events.extend(verifier_transition.events);
+
                                 workflow_instance = self
                                     .commit_task_result_events_preserving_pause(
                                         namespace,
@@ -784,15 +794,14 @@ impl WorkflowEngine {
             ) || (state.status == VerifierStateStatus::Running
                 && loop_slices
                     .get(id)
-                    .is_some_and(|slice| self.slice_has_skipped_attempt(workflow_instance, slice)))
+                    .is_some_and(|slice| self.slice_interrupted_by_exit(workflow_instance, slice)))
         })
     }
 
-    fn slice_has_skipped_attempt(&self, instance: &WorkflowInstance, slice: &[String]) -> bool {
-        slice.iter().any(|id| {
-            self.latest_materialized_attempt_id(instance, id)
-                .and_then(|attempt_id| instance.tasks.get(&attempt_id))
-                .is_some_and(|task| task.status == TaskStatus::Skipped)
+    fn slice_interrupted_by_exit(&self, instance: &WorkflowInstance, slice: &[String]) -> bool {
+        instance.tasks.values().any(|task| {
+            slice.contains(&task.task_def_id)
+                && (task.status == TaskStatus::Skipped || task.early_exit)
         })
     }
 
@@ -856,7 +865,7 @@ impl WorkflowEngine {
         seen
     }
 
-    fn materialize_eligible_generation_events(
+    fn materialize_eligible_initial_generation_events(
         &self,
         instance: &WorkflowInstance,
         def: &WorkflowDef,
@@ -867,19 +876,22 @@ impl WorkflowEngine {
         let mut planned_task_attempts = HashSet::new();
 
         for (verifier_task_id, slice) in loop_slices {
-            if self.slice_has_skipped_attempt(instance, slice)
+            if self.slice_interrupted_by_exit(instance, slice)
                 || instance.verifier_states.contains_key(verifier_task_id)
                 || planned_verifier_states.contains(verifier_task_id)
             {
                 continue;
             }
+
             let Some(verifier_task) = def.tasks.iter().find(|task| task.id == *verifier_task_id)
             else {
                 continue;
             };
+
             let Some(verifier) = task_verifier(verifier_task) else {
                 continue;
             };
+
             let Some(start_task) = def
                 .tasks
                 .iter()
@@ -949,7 +961,7 @@ impl WorkflowEngine {
         generation_index: u32,
         planned_task_attempts: &mut HashSet<String>,
     ) -> Vec<WorkflowInstanceEvent> {
-        if self.slice_has_skipped_attempt(workflow_instance, slice) {
+        if self.slice_interrupted_by_exit(workflow_instance, slice) {
             return vec![];
         }
         let mut events = Vec::new();
@@ -1308,6 +1320,29 @@ impl WorkflowEngine {
                         verifier_output: verifier_result.output.clone(),
                     },
                 });
+
+                if self.slice_interrupted_by_exit(instance, &slice) {
+                    events.push(WorkflowInstanceEvent::TaskVerifierMetadataSet {
+                        task_attempt_id: verifier_task_attempt_id.to_string(),
+                        verifier_metadata: Some(VerifierAttemptMetadata {
+                            status: VerifierAttemptStatus::Rejected,
+                            decision: Some(VerifierDecision::Continue),
+                            feedback: Some(feedback),
+                            verifier_output: Some(verifier_result.output),
+                            exit_reason: Some("slice_interrupted_by_early_exit".to_string()),
+                        }),
+                    });
+                    events.extend(self.slice_satisfaction_events(
+                        instance,
+                        &slice,
+                        generation,
+                        TaskSatisfactionStatus::Unsatisfied,
+                    ));
+                    return Ok(VerifierTransition {
+                        events,
+                        error_message: None,
+                    });
+                }
 
                 if generation < verifier.max_iterations {
                     let mut updated_state = state.clone();

@@ -165,7 +165,7 @@ Output schema validation runs before the control is evaluated; if your schema
 restricts output fields, include `workflow_exit_reason` as a string or `null`.
 
 An exit request preserves the triggering task's output and marks remaining
-pending tasks as `Skipped`. No new tasks are dispatched. Already-running tasks
+pending tasks as `Skipped`. Skipped tasks are not dispatched. Already-running tasks
 finish, and the workflow completes once those tasks succeed; `Skipped` counts
 as terminal for completion. If an already-running task fails, the workflow
 becomes `Failed` under normal failure behavior.
@@ -181,8 +181,20 @@ and task-result metadata. Its preserved output contains the dynamic reason. The
 to `false`; retries clear the flag. Orchestrator info logs report whether execution continues, exit
 is requested, or validation fails. Exit requests include the reason and pending-task
 count; validation failures include the error.
-Human-input results from tasks still running after exit, verifier-loop
-interactions, and pause interactions still require design decisions.
+Already-running tasks may request human input; the workflow waits for the response
+and allows the continuation to finish while downstream attempts remain skipped.
+
+Tasks within verifier slices can trigger exit. A slice containing skipped attempts
+or an attempt with `early_exit: true` creates no further generations and does not
+require acceptance for workflow completion. A verifier's `continue` result and
+feedback are retained, with that generation unsatisfied.
+
+An independent verifier already running may finish its normal retry loop if its
+slice is uninterrupted, even if its direct consumers are skipped or it is terminal.
+Normal acceptance, exhaustion, and failure rules apply. These retries and human-input
+continuations are exceptions to stopping new work after exit. Pending verifiers
+skipped by the exit do not run. Operator-pause ordering remains undecided; existing
+pause behavior is preserved.
 
 ## Workspaces
 
