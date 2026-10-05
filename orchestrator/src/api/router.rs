@@ -262,6 +262,7 @@ mod tests {
             trigger_input: Some(json!({"owner": "namespace-b"})),
             pinned_worker_host: None,
             tasks: HashMap::from([("task-a[1]".to_string(), task(task_status))]),
+
             verifier_states: HashMap::new(),
         }
     }

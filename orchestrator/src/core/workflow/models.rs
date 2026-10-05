@@ -76,6 +76,12 @@ pub struct WorkflowInstance {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EarlyCompletion {
+    pub task_attempt_id: String,
+    pub output_pointer: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkflowInfo {
     #[serde(skip_serializing)]
     pub namespace: Namespace,

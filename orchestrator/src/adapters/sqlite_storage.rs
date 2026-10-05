@@ -618,6 +618,7 @@ async fn upsert_workflow_instance(
             version = excluded.version,
             status = excluded.status,
             trigger_input_json = excluded.trigger_input_json,
+
             pinned_worker_host_id = excluded.pinned_worker_host_id,
             modified_at_epoch_ms = excluded.modified_at_epoch_ms,
             completed_at_epoch_ms = excluded.completed_at_epoch_ms",
@@ -799,6 +800,7 @@ fn task_status_name(status: &TaskStatus) -> &'static str {
         TaskStatus::Running => "running",
         TaskStatus::InputNeeded { .. } => "input_needed",
         TaskStatus::Completed => "completed",
+        TaskStatus::Skipped => "skipped",
         TaskStatus::Failed => "failed",
     }
 }
@@ -973,6 +975,7 @@ mod tests {
             trigger_input: Some(json!({"request": true})),
             pinned_worker_host: Some(WorkerHostId("host-a".to_string())),
             tasks: HashMap::new(),
+
             verifier_states: HashMap::new(),
         }
     }
@@ -1060,6 +1063,9 @@ mod tests {
     async fn reconstructs_workflow_instance_from_normalized_rows() {
         let storage = storage().await;
         let mut instance = instance("wf-1", WorkflowStatus::InputNeeded);
+        instance
+            .tasks
+            .insert("skipped[1]".into(), task(TaskStatus::Skipped));
         instance.tasks.insert(
             "task-a[2]".to_string(),
             task(TaskStatus::InputNeeded {
@@ -1099,6 +1105,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(saved.id, instance.id);
+        assert_eq!(saved.tasks["skipped[1]"].status, TaskStatus::Skipped);
         assert_eq!(saved.status, WorkflowStatus::InputNeeded);
         assert_eq!(saved.pinned_worker_host, instance.pinned_worker_host);
         assert_eq!(

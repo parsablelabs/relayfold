@@ -108,6 +108,7 @@ mod tests {
             trigger_input: None,
             pinned_worker_host: None,
             tasks: HashMap::new(),
+
             verifier_states: HashMap::new(),
         }
     }

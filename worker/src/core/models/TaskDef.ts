@@ -29,6 +29,7 @@ export interface TaskDef {
 }
 
 export interface TaskControl {
+    exit_workflow?: { when: string };
     verifier?: VerifierControlConfig;
 }
 

@@ -25,9 +25,11 @@ flowchart TD
 
     Input --> Scan
     Input --> Issues
-    Scan --> Prune
+    Scan -->|"no patterns: no_work = true"| Done
+    Scan -->|"patterns remain"| Prune
     Issues --> Prune
-    Prune --> Analyze
+    Prune -->|"all covered: no_work = true"| Done
+    Prune -->|"patterns remain"| Analyze
     Issues --> Analyze
     Prune --> Verify
     Issues --> Verify
@@ -40,9 +42,9 @@ flowchart TD
     Labels --> Done
 </pre>
 
-1. `scan-cloudwatch` uses the AWS SDK to fetch paginated WARN/WARNING/ERROR keyword matches from each explicit region and log group. It normalizes recurring messages, counts occurrences, and passes up to three original samples per pattern to the analysis task.
+1. `scan-cloudwatch` uses the AWS SDK to fetch paginated WARN/WARNING/ERROR keyword matches from each explicit region and log group. It normalizes recurring messages, counts occurrences, and passes up to three original samples per pattern to the analysis task. It sets `no_work: true` when no patterns were collected, requesting successful early completion.
 2. `fetch-issues` runs independently of scanning, fetching all open issues labeled `relayfold` in the input repository. It excludes pull requests and fails if it cannot retrieve the complete list.
-3. `prune-covered-logs` deterministically removes log patterns whose exact fingerprints appear in the fetched open issues, before any LLM analysis. It uses the existing issue markers and needs no separate persistent state. Only unmatched patterns and their samples reach analysis, verification, and publishing. The scan window and truncation information are preserved; `total_events` still counts the original scan before pruning. Unmarked or closed issues do not suppress patterns at this stage.
+3. `prune-covered-logs` deterministically removes log patterns whose exact fingerprints appear in the fetched open issues, before any LLM analysis. It uses the existing issue markers and needs no separate persistent state. Only unmatched patterns and their samples reach analysis, verification, and publishing. The scan window and truncation information are preserved; `total_events` still counts the original scan before pruning. Unmarked or closed issues do not suppress patterns at this stage. It recomputes `no_work` from the remaining groups and requests successful early completion when they are empty.
 4. `analyze-main` first inspects the scan. When `groups` is empty, it returns `{}` without tools or repository inspection. Otherwise, it clones the repository, records the main commit, and traces symptoms through its application services. It checks actual severity, current code, and the supplied open issues labeled `relayfold`, comparing root causes rather than titles. It waits for both scanning and issue fetching. It drafts at most three distinct, actionable improvements, or returns no findings with an explanation.
 5. `verify-analysis` is an Agent that reviews the analysis against scan evidence and relevant repository context. It accepts the unchanged analysis or returns actionable feedback to retry `analyze-main`. The loop permits three generations and fails if the last is rejected; scanning is not repeated.
 6. `publish-issues` consumes the accepted verifier output, validates the drafts and checks all existing issues for stable fingerprint markers before submitting them. Each issue includes **Problem**, **Goal**, **Acceptance Criteria**, and **Notes**, with log evidence, code permalinks, root-cause reasoning, and regression-test criteria.
@@ -53,7 +55,27 @@ Analysis and verification assess whether each finding is immediately implementab
 
 New issues receive the `relayfold` label so later runs include them in semantic duplicate inspection. Analysis may also select the optional `bug` label when log and code evidence establish a clear bug, with the defect explained in the issue body and checked by the verifier. General improvements and uncertain hypotheses do not receive `bug`. Dry-run drafts include the labels that would be published. That inspection covers open labeled issues; the publisher also checks fingerprint markers across open and closed issues immediately before creating new ones.
 
-An empty scan, or a scan whose patterns are all covered by open issues, completes successfully: the publisher accepts the empty analysis, returns empty `created` and `skipped` lists with a no-work summary, and makes no GitHub requests. All seven tasks still execute. Both Agents still make LLM API calls for the no-work response; pruning saves input tokens and repository inspection rather than bypassing Agent execution. The analysis Agent decides whether analysis is needed from the scan input, and the verifier confirms the no-work result without using tools.
+An empty scan, or a scan whose patterns are all covered by open issues, completes
+successfully before either Agent runs. Both `scan-cloudwatch` and
+`prune-covered-logs` declare:
+
+```yaml
+control:
+  exit_workflow:
+    when: /no_work
+```
+
+Their output schemas require a boolean `no_work`. A `true` value skips remaining
+pending tasks, including analysis, verification, publishing, and labeling. The
+triggering output is retained, including the scan window, counts, and truncation
+information. Independent issue fetching may already have run; already-running
+tasks finish normally. `no_work` means there are no retained patterns to analyze,
+not that a truncated scan proves the absence of errors.
+
+Neither `analyze-main` nor `verify-analysis` requests workflow exit: a conclusion
+that there are no actionable findings still passes through verification. These
+tasks retain their empty-scan handling for standalone use, and publishing retains
+its no-op handling for accepted empty analyses and findings arrays.
 
 RelayFold requires a verifier decision envelope. On acceptance, `verify-analysis` returns `{"decision":"complete","output":<unchanged analysis>}`; for no work, `output` is `{}`. On rejection it returns `{"decision":"continue","feedback":"..."}`. The publisher receives the scan and verifier envelope, extracts `output`, and completes without GitHub requests when that object is empty. See [Bounded Loops](/relayfold/docs/concepts/bounded-loops/).
 

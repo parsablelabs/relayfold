@@ -10,8 +10,9 @@ use crate::core::verifier::{
 use crate::core::worker::TaskDispatchConstraints;
 use crate::core::workflow::events::WorkflowInstanceEvent;
 use crate::core::workflow::models::{
-    TaskStatusReport, VerifierFeedbackEntry, VerifierGenerationState, VerifierStateStatus,
-    VerifierStatusReport, WorkflowDef, WorkflowInstance, WorkflowStatus, WorkflowStatusReport,
+    EarlyCompletion, TaskStatusReport, VerifierFeedbackEntry, VerifierGenerationState,
+    VerifierStateStatus, VerifierStatusReport, WorkflowDef, WorkflowInstance, WorkflowStatus,
+    WorkflowStatusReport,
 };
 use crate::core::workflow::state_manager::WorkflowStateManager;
 use crate::ports::storage::StoragePort;
@@ -230,6 +231,11 @@ impl WorkflowEngine {
             tasks_to_run.sort();
 
             for task_attempt_id in tasks_to_run {
+                // Earlier results in this pass may have skipped this runnable attempt.
+                // TODO: consider other implementation options, e.g. prunning tasks_to_run?
+                if workflow_instance.tasks[&task_attempt_id].status != TaskStatus::Pending {
+                    continue;
+                }
                 // A pause may have been committed while this engine pass was
                 // resolving runnable work. Stop cleanly instead of turning the
                 // next task attempt Running and relying on a version conflict.
@@ -430,13 +436,106 @@ impl WorkflowEngine {
                                     satisfaction_status: TaskSatisfactionStatus::Satisfied,
                                 });
                             }
-                            // Only record output when a schema is declared.
-                            if output_schema.is_some() {
+                            let exit_control = task_def
+                                .control
+                                .as_ref()
+                                .and_then(|control| control.exit_workflow.as_ref());
+                            // Exit controls preserve the output even without an output schema.
+                            if output_schema.is_some() || exit_control.is_some() {
                                 events.push(WorkflowInstanceEvent::TaskOutputRecorded {
                                     task_attempt_id: task_attempt_id.clone(),
                                     output_data: Some(output.clone()),
                                 });
                             }
+
+                            if let Some(control) = exit_control {
+                                match control.evaluate(&output) {
+                                    Ok(true) => {
+                                        events.push(
+                                            WorkflowInstanceEvent::EarlyCompletionRequested {
+                                                metadata: EarlyCompletion {
+                                                    task_attempt_id: task_attempt_id.clone(),
+                                                    output_pointer: control.when.clone(),
+                                                },
+                                            },
+                                        );
+
+                                        let mut pending_ids: Vec<_> = workflow_instance
+                                            .tasks
+                                            .iter()
+                                            .filter(|(_, task)| task.status == TaskStatus::Pending)
+                                            .map(|(id, _)| id.clone())
+                                            .collect();
+
+                                        // sorting IDs to keep even order deterministic when persisted
+                                        pending_ids.sort();
+
+                                        tracing::info!(
+                                            workflow_instance_id = %workflow_inst_id,
+                                            task_attempt_id = %task_attempt_id,
+                                            output_pointer = %control.when,
+                                            pending_task_count = pending_ids.len(),
+                                            "Early-exit control evaluated to true; requesting successful workflow exit"
+                                        );
+
+                                        for id in pending_ids {
+                                            events.push(WorkflowInstanceEvent::TaskStatusChanged {
+                                                task_attempt_id: id.clone(),
+                                                status: TaskStatus::Skipped,
+                                            });
+                                            events.push(
+                                                WorkflowInstanceEvent::TaskSatisfactionChanged {
+                                                    task_attempt_id: id,
+                                                    satisfaction_status:
+                                                        TaskSatisfactionStatus::Unsatisfied,
+                                                },
+                                            );
+                                        }
+                                    }
+                                    Ok(false) => {
+                                        tracing::info!(
+                                            workflow_instance_id = %workflow_inst_id,
+                                            task_attempt_id = %task_attempt_id,
+                                            output_pointer = %control.when,
+                                            "Early-exit control evaluated to false; continuing workflow execution"
+                                        );
+                                    }
+                                    Err(error) => {
+                                        tracing::info!(
+                                            workflow_instance_id = %workflow_inst_id,
+                                            task_attempt_id = %task_attempt_id,
+                                            output_pointer = %control.when,
+                                            error = %error,
+                                            "Early-exit control validation failed; failing task and workflow"
+                                        );
+
+                                        events.extend([
+                                            WorkflowInstanceEvent::TaskStatusChanged {
+                                                task_attempt_id: task_attempt_id.clone(),
+                                                status: TaskStatus::Failed,
+                                            },
+                                            WorkflowInstanceEvent::TaskSatisfactionChanged {
+                                                task_attempt_id: task_attempt_id.clone(),
+                                                satisfaction_status:
+                                                    TaskSatisfactionStatus::Unsatisfied,
+                                            },
+                                            WorkflowInstanceEvent::WorkflowStatusChanged {
+                                                status: WorkflowStatus::Failed,
+                                            },
+                                        ]);
+                                        self.commit_task_result_events_preserving_pause(
+                                            namespace,
+                                            &state_manager,
+                                            &workflow_inst_id,
+                                            workflow_instance,
+                                            events,
+                                        )
+                                        .await?;
+                                        return Err(error);
+                                    }
+                                }
+                            }
+
                             if task_verifier(task_def).is_some() {
                                 let verifier_result = match verifier_result_from_output(&output) {
                                     Ok(verifier_result) => verifier_result,
@@ -676,15 +775,29 @@ impl WorkflowEngine {
         workflow_instance: &WorkflowInstance,
         workflow_def: &WorkflowDef,
     ) -> bool {
+        let loop_slices = self.compute_loop_slices(workflow_def);
         workflow_def.tasks.iter().all(|task_def| {
             self.latest_materialized_attempt_id(workflow_instance, &task_def.id)
-                .and_then(|task_attempt_id| workflow_instance.tasks.get(&task_attempt_id))
-                .is_some_and(|task| task.status == TaskStatus::Completed)
-        }) && workflow_instance.verifier_states.values().all(|state| {
+                .and_then(|id| workflow_instance.tasks.get(&id))
+                .is_some_and(|task| {
+                    matches!(task.status, TaskStatus::Completed | TaskStatus::Skipped)
+                })
+        }) && workflow_instance.verifier_states.iter().all(|(id, state)| {
             matches!(
                 state.status,
                 VerifierStateStatus::Accepted | VerifierStateStatus::ExhaustedAccepted
-            )
+            ) || (state.status == VerifierStateStatus::Running
+                && loop_slices
+                    .get(id)
+                    .is_some_and(|slice| self.slice_has_skipped_attempt(workflow_instance, slice)))
+        })
+    }
+
+    fn slice_has_skipped_attempt(&self, instance: &WorkflowInstance, slice: &[String]) -> bool {
+        slice.iter().any(|id| {
+            self.latest_materialized_attempt_id(instance, id)
+                .and_then(|attempt_id| instance.tasks.get(&attempt_id))
+                .is_some_and(|task| task.status == TaskStatus::Skipped)
         })
     }
 
@@ -759,7 +872,8 @@ impl WorkflowEngine {
         let mut planned_task_attempts = HashSet::new();
 
         for (verifier_task_id, slice) in loop_slices {
-            if instance.verifier_states.contains_key(verifier_task_id)
+            if self.slice_has_skipped_attempt(instance, slice)
+                || instance.verifier_states.contains_key(verifier_task_id)
                 || planned_verifier_states.contains(verifier_task_id)
             {
                 continue;
@@ -840,6 +954,9 @@ impl WorkflowEngine {
         generation_index: u32,
         planned_task_attempts: &mut HashSet<String>,
     ) -> Vec<WorkflowInstanceEvent> {
+        if self.slice_has_skipped_attempt(workflow_instance, slice) {
+            return vec![];
+        }
         let mut events = Vec::new();
         for task_def_id in slice {
             let task_attempt_id = TaskInstance::make_task_attempt_id(task_def_id, generation_index);

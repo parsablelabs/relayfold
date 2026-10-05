@@ -14,8 +14,10 @@ export default function run({ inputs }) {
     ))
       covered.add(match[1]);
   }
+  const groups = scan.groups.filter((group) => !covered.has(group.fingerprint));
   return {
     ...scan,
-    groups: scan.groups.filter((group) => !covered.has(group.fingerprint)),
+    groups,
+    no_work: groups.length === 0,
   };
 }

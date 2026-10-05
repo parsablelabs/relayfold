@@ -124,6 +124,7 @@ export function createScanner({
       end_time: new Date(end).toISOString(),
       dry_run: config.dry_run ?? false,
       total_events: total,
+      no_work: groups.size === 0,
       truncated: truncation.length > 0,
       truncation,
       groups: [...groups.values()].sort((a, b) => b.count - a.count),

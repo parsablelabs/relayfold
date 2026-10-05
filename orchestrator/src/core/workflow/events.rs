@@ -2,8 +2,8 @@ use crate::core::task::{TaskInputMapping, TaskInstance, TaskSatisfactionStatus, 
 use crate::core::verifier::VerifierAttemptMetadata;
 use crate::core::worker::WorkerHostId;
 use crate::core::workflow::models::{
-    VerifierFeedbackEntry, VerifierGenerationState, VerifierStateStatus, WorkflowInstance,
-    WorkflowStatus,
+    EarlyCompletion, VerifierFeedbackEntry, VerifierGenerationState, VerifierStateStatus,
+    WorkflowInstance, WorkflowStatus,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -15,6 +15,8 @@ pub enum WorkflowInstanceEvent {
     WorkflowCreated { instance: WorkflowInstance },
     /// Changes the overall workflow instance status.
     WorkflowStatusChanged { status: WorkflowStatus },
+    /// Durably requests early completion; pending attempts are skipped in the same batch.
+    EarlyCompletionRequested { metadata: EarlyCompletion },
     /// Resets in-flight running workflow or task state after orchestrator restart.
     StartupRecoveryApplied { task_attempt_ids: Vec<String> },
     /// Adds a concrete task attempt to the workflow instance.
@@ -103,6 +105,7 @@ pub fn apply_workflow_instance_event(
         WorkflowInstanceEvent::WorkflowStatusChanged { status } => {
             instance.status = status.clone();
         }
+        WorkflowInstanceEvent::EarlyCompletionRequested { .. } => {}
         WorkflowInstanceEvent::StartupRecoveryApplied { task_attempt_ids } => {
             if instance.status == WorkflowStatus::Running {
                 instance.status = WorkflowStatus::Pending;
@@ -256,6 +259,7 @@ pub fn changed_task_attempt_ids(events: &[WorkflowEventRecord]) -> HashSet<Strin
                 task_attempt_ids.extend(instance.tasks.keys().cloned());
             }
             WorkflowInstanceEvent::WorkflowStatusChanged { .. }
+            | WorkflowInstanceEvent::EarlyCompletionRequested { .. }
             | WorkflowInstanceEvent::VerifierStateUpserted { .. }
             | WorkflowInstanceEvent::VerifierFeedbackRecorded { .. }
             | WorkflowInstanceEvent::VerifierStateStatusChanged { .. } => {}

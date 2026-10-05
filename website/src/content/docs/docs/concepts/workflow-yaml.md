@@ -54,7 +54,7 @@ tasks:
 | `output_schema` | No | JSON Schema for task output. Verifier tasks must omit this because RelayFold injects the decision schema. |
 | `workspace` | No | Workspace group assignment. |
 | `required_credentials` | Yes | Named credentials required before execution. Use `[]` when none are needed. |
-| `control` | No | Verifier control settings for bounded loops. |
+| `control` | No | Verifier settings for bounded loops or successful early workflow exit. |
 
 Input and output schemas support standard format validation, including `date`,
 `email`, and `uri`.
@@ -140,6 +140,40 @@ control:
 `control.verifier` turns a task into a bounded-loop verifier. The verifier returns `{ "decision": "complete" }` or `{ "decision": "continue", "feedback": "..." }`.
 
 See [Bounded Loops](/relayfold/docs/concepts/bounded-loops/) for the full control-flow behavior.
+
+## Early workflow exit
+
+Implementation is in progress; the core behavior below is implemented, while
+the interactions listed at the end of this section remain undecided.
+
+To complete a workflow when a task discovers there is no remaining work, select
+an output boolean using JSON Pointer:
+
+```yaml
+control:
+  exit_workflow:
+    when: /no_work
+```
+
+A successful, validated output with `true` at the selected pointer requests
+early completion, preserves the triggering task's output, and marks remaining
+pending tasks as `Skipped`. No new tasks will be dispatched. Already-running
+tasks finish, and the workflow completes once those tasks succeed;
+`Skipped` counts as terminal for completion. If an already-running task fails,
+the workflow becomes `Failed` under normal failure behavior. `false`
+continues normal execution. The selected field must exist and contain a boolean; a missing or non-boolean value fails the
+task and workflow. Output schema validation runs before the control is evaluated.
+A boolean by itself has no effect unless `control.exit_workflow` is configured.
+The control applies to every task kind; an API Call can select a response field with a pointer such as `/body/no_work`.
+
+There is no configured `reason` field. Workflow inspection identifies the
+triggering task attempt and pointer; task outputs can include additional context.
+Orchestrator info logs report each exit-control evaluation, including the workflow
+instance, task attempt, pointer, and whether execution continues, exit is requested,
+or validation fails. Exit requests include the pending-task count; validation
+failures include the error.
+Human-input results from tasks still running after exit, verifier-loop
+interactions, and pause interactions still require design decisions.
 
 ## Workspaces
 

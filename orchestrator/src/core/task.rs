@@ -46,7 +46,44 @@ pub enum TaskTypeDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskControl {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_workflow: Option<ExitWorkflowControl>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verifier: Option<VerifierControlConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExitWorkflowControl {
+    pub when: String,
+}
+
+impl ExitWorkflowControl {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let pointer = &self.when;
+        if !pointer.is_empty() && !pointer.starts_with('/') {
+            anyhow::bail!("exit_workflow.when must be a JSON Pointer");
+        }
+        let mut chars = pointer.chars();
+        while let Some(c) = chars.next() {
+            if c == '~' && !matches!(chars.next(), Some('0' | '1')) {
+                anyhow::bail!("exit_workflow.when contains an invalid JSON Pointer escape");
+            }
+        }
+        Ok(())
+    }
+
+    pub fn evaluate(&self, output: &serde_json::Value) -> anyhow::Result<bool> {
+        self.validate()?;
+        output
+            .pointer(&self.when)
+            .and_then(serde_json::Value::as_bool)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "exit_workflow.when {} must select an existing boolean",
+                    self.when
+                )
+            })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +114,7 @@ pub enum TaskStatus {
     Running,
     InputNeeded { input_request: String },
     Completed,
+    Skipped,
     Failed,
 }
 
@@ -349,5 +387,31 @@ apiCall:
         .unwrap_err();
 
         assert!(error.to_string().contains("unknown field `group`"));
+    }
+    #[test]
+    fn exit_pointer_handles_nested_arrays_escapes_and_root_boolean() {
+        for (pointer, output) in [
+            ("/body/no_work", json!({"body":{"no_work":true}})),
+            ("/items/0", json!({"items":[true]})),
+            ("/a~1b/~0", json!({"a/b":{"~":true}})),
+            ("", json!(true)),
+        ] {
+            assert!(
+                ExitWorkflowControl {
+                    when: pointer.into()
+                }
+                .evaluate(&output)
+                .unwrap()
+            );
+        }
+        for pointer in ["no_work", "/bad~", "/bad~2"] {
+            assert!(
+                ExitWorkflowControl {
+                    when: pointer.into()
+                }
+                .validate()
+                .is_err()
+            );
+        }
     }
 }

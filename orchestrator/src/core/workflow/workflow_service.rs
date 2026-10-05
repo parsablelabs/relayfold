@@ -657,6 +657,10 @@ fn task_result_for_instance(
             error_message: "task failed".to_string(),
             metadata,
         },
+        TaskStatus::Skipped => TaskResult::Skipped {
+            input: task.input_data.clone(),
+            metadata,
+        },
         TaskStatus::Pending => TaskResult::Pending {
             input: task.input_data.clone(),
             metadata,
@@ -825,12 +829,21 @@ fn validate_and_normalize_workflow_def(mut def: WorkflowDef) -> anyhow::Result<W
     }
 
     for task in &mut def.tasks {
+        if let Some(control) = task
+            .control
+            .as_ref()
+            .and_then(|control| control.exit_workflow.as_ref())
+        {
+            control.validate()?;
+        }
+
         if get_task_verifier_config(task).is_some() && task.output_schema.is_some() {
             anyhow::bail!(
                 "task {} declares control.verifier and must not declare output_schema",
                 task.id
             );
         }
+
         if let Some(verifier) = task
             .control
             .as_mut()

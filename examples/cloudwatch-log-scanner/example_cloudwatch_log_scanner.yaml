@@ -2,6 +2,9 @@ id: cloudwatch-log-scanner
 description: Scan CloudWatch warnings/errors and submit evidence-backed GitHub issues without code changes.
 tasks:
   - id: scan-cloudwatch
+    control:
+      exit_workflow:
+        when: /no_work
     timeout_secs: 600
     kind:
       function:
@@ -48,8 +51,12 @@ tasks:
         - end_time
         - dry_run
         - total_events
+        - no_work
         - truncated
         - truncation
+      properties:
+        no_work:
+          type: boolean
     required_credentials:
       - aws_access_key_id
       - aws_secret_access_key
@@ -95,6 +102,9 @@ tasks:
     required_credentials:
       - gh_token
   - id: prune-covered-logs
+    control:
+      exit_workflow:
+        when: /no_work
     timeout_secs: 60
     required_credentials: []
     kind:
@@ -109,8 +119,12 @@ tasks:
         - end_time
         - dry_run
         - total_events
+        - no_work
         - truncated
         - truncation
+      properties:
+        no_work:
+          type: boolean
   - id: analyze-main
     timeout_secs: 1800
     kind:

@@ -840,6 +840,7 @@ data_bindings: []
             trigger_input: None,
             pinned_worker_host,
             tasks: HashMap::from([("taska[1]".to_string(), task)]),
+
             verifier_states: HashMap::new(),
         }
     }
@@ -951,6 +952,7 @@ data_bindings: []
                     trigger_input: None,
                     pinned_worker_host: None,
                     tasks: HashMap::new(),
+
                     verifier_states: HashMap::new(),
                 },
             )

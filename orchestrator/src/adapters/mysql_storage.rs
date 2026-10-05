@@ -631,6 +631,7 @@ async fn upsert_workflow_instance(
             version = new.version,
             status = new.status,
             trigger_input_json = new.trigger_input_json,
+
             pinned_worker_host_id = new.pinned_worker_host_id,
             modified_at_epoch_ms = new.modified_at_epoch_ms,
             completed_at_epoch_ms = new.completed_at_epoch_ms",
