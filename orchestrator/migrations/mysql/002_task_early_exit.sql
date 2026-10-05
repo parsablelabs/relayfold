@@ -1,0 +1,1 @@
+ALTER TABLE workflow_tasks ADD COLUMN early_exit BOOLEAN NOT NULL DEFAULT FALSE;

@@ -33,6 +33,7 @@ pub struct WorkflowStatusReport {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskStatusReport {
+    pub early_exit: bool,
     pub task_attempt_id: String,
     pub task_def_id: String,
     pub status: TaskStatus,
@@ -73,12 +74,6 @@ pub struct WorkflowInstance {
     pub tasks: HashMap<String, TaskInstance>,
     #[serde(default)]
     pub verifier_states: HashMap<String, VerifierGenerationState>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct EarlyCompletion {
-    pub task_attempt_id: String,
-    pub output_pointer: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

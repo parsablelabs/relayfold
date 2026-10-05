@@ -798,6 +798,7 @@ data_bindings: []
 
     fn failed_task() -> TaskInstance {
         TaskInstance {
+            early_exit: false,
             task_def_id: "taska".to_string(),
             status: TaskStatus::Failed,
             satisfaction_status: TaskSatisfactionStatus::Unsatisfied,
@@ -812,6 +813,7 @@ data_bindings: []
 
     fn input_needed_task() -> TaskInstance {
         TaskInstance {
+            early_exit: false,
             task_def_id: "taska".to_string(),
             status: TaskStatus::InputNeeded {
                 input_request: "need approval".to_string(),

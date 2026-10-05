@@ -235,6 +235,7 @@ mod tests {
 
     fn task(status: TaskStatus) -> TaskInstance {
         TaskInstance {
+            early_exit: false,
             task_def_id: "task-a".to_string(),
             satisfaction_status: if status == TaskStatus::Completed {
                 TaskSatisfactionStatus::Satisfied

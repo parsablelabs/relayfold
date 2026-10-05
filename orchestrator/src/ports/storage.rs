@@ -150,6 +150,7 @@ pub struct WorkflowTaskResult {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskResultMetadata {
+    pub early_exit: bool,
     pub task_def_id: String,
     pub task_attempt_id: String,
     pub satisfaction: TaskSatisfactionStatus,
@@ -165,6 +166,7 @@ fn serialize_metadata<S>(
 where
     S: SerializeMap,
 {
+    map.serialize_entry("early_exit", &metadata.early_exit)?;
     map.serialize_entry("task_def_id", &metadata.task_def_id)?;
     map.serialize_entry("task_attempt_id", &metadata.task_attempt_id)?;
     map.serialize_entry("satisfaction", &metadata.satisfaction)?;

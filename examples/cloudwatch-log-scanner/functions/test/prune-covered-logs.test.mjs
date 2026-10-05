@@ -35,7 +35,7 @@ test("prunes exact issue markers, preserving remaining evidence and scan metadat
     assert.deepEqual(result, {
       ...scan,
       groups: [scan.groups[1]],
-      no_work: false,
+      workflow_exit_reason: null,
     });
     assert.equal(scan.groups.length, 2);
   }
@@ -52,7 +52,7 @@ test("retains unmatched groups, including text without a valid current marker", 
   ])
     assert.deepEqual(prune({ inputs: [scan, fetched(issues)] }), {
       ...scan,
-      no_work: false,
+      workflow_exit_reason: null,
     });
 });
 
@@ -68,7 +68,10 @@ test("all covered or empty scans produce no-work input for publishing", async ()
       ],
     });
     assert.deepEqual(result.groups, []);
-    assert.equal(result.no_work, true);
+    assert.equal(
+      result.workflow_exit_reason,
+      "No uncovered log patterns remain.",
+    );
     const published = await publish({
       inputs: [result, { decision: "complete", output: {} }],
     });
@@ -77,19 +80,24 @@ test("all covered or empty scans produce no-work input for publishing", async ()
   }
 });
 
-test("recomputes no_work from remaining groups instead of trusting the upstream flag", () => {
+test("recomputes exit reason from remaining groups instead of trusting the upstream reason", () => {
   assert.equal(
-    prune({ inputs: [{ ...scan, no_work: true }, fetched([])] }).no_work,
-    false,
+    prune({
+      inputs: [
+        { ...scan, workflow_exit_reason: "Upstream exit reason" },
+        fetched([]),
+      ],
+    }).workflow_exit_reason,
+    null,
   );
   assert.equal(
     prune({
       inputs: [
-        { ...scan, no_work: false },
+        { ...scan, workflow_exit_reason: null },
         fetched([{ body: `${marker(first)}\n${marker(second)}` }]),
       ],
-    }).no_work,
-    true,
+    }).workflow_exit_reason,
+    "No uncovered log patterns remain.",
   );
 });
 
@@ -120,6 +128,6 @@ test("generated pruning artifact runs without dependencies", async () => {
   );
   assert.deepEqual(
     module.default({ inputs: [scan, fetched([{ body: marker(first) }])] }),
-    { ...scan, groups: [scan.groups[1]], no_work: false },
+    { ...scan, groups: [scan.groups[1]], workflow_exit_reason: null },
   );
 });

@@ -89,6 +89,25 @@ impl SqliteStorage {
             .await?;
         }
 
+        let migration = "002_task_early_exit";
+        let applied = sqlx::query("SELECT version FROM schema_migrations WHERE version = ?")
+            .bind(migration)
+            .fetch_optional(&mut *tx)
+            .await?;
+        if applied.is_none() {
+            sqlx::query(
+                "ALTER TABLE workflow_tasks ADD COLUMN early_exit BOOLEAN NOT NULL DEFAULT FALSE",
+            )
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query(
+                "INSERT INTO schema_migrations (version, applied_at_epoch_ms) VALUES (?, ?)",
+            )
+            .bind(migration)
+            .bind(i64_from_u64(unix_timestamp_ms()?)?)
+            .execute(&mut *tx)
+            .await?;
+        }
         tx.commit().await?;
         Ok(())
     }
@@ -253,7 +272,7 @@ impl StoragePort for SqliteStorage {
 
         let task_rows = sqlx::query(
             "SELECT task_attempt_id, task_def_id, status_json, satisfaction_status, generation_index,
-                    human_input_json, input_data_json, input_mapping_json, output_data_json,
+                    human_input_json, early_exit, input_data_json, input_mapping_json, output_data_json,
                     verifier_metadata_json
              FROM workflow_tasks
              WHERE namespace = ? AND workflow_instance_id = ?",
@@ -266,6 +285,7 @@ impl StoragePort for SqliteStorage {
         for row in task_rows {
             let task_attempt_id = row.get::<String, _>("task_attempt_id");
             let task = TaskInstance {
+                early_exit: row.get("early_exit"),
                 task_def_id: row.get("task_def_id"),
                 status: deserialize_json(&row.get::<String, _>("status_json"))?,
                 satisfaction_status: deserialize_json(
@@ -678,10 +698,10 @@ async fn upsert_task(
     sqlx::query(
         "INSERT INTO workflow_tasks (
                 namespace, workflow_instance_id, task_attempt_id, task_def_id, status, status_json,
-                satisfaction_status, generation_index, human_input_json, input_data_json,
+                satisfaction_status, generation_index, human_input_json, early_exit, input_data_json,
                 input_mapping_json, output_data_json, verifier_metadata_json
              )
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(namespace, workflow_instance_id, task_attempt_id) DO UPDATE SET
                 task_def_id = excluded.task_def_id,
                 status = excluded.status,
@@ -689,6 +709,7 @@ async fn upsert_task(
                 satisfaction_status = excluded.satisfaction_status,
                 generation_index = excluded.generation_index,
                 human_input_json = excluded.human_input_json,
+                early_exit = excluded.early_exit,
                 input_data_json = excluded.input_data_json,
                 input_mapping_json = excluded.input_mapping_json,
                 output_data_json = excluded.output_data_json,
@@ -703,6 +724,7 @@ async fn upsert_task(
     .bind(serde_json::to_string(&task.satisfaction_status)?)
     .bind(i64::from(task.generation_index))
     .bind(optional_json_string(&task.human_input)?)
+    .bind(task.early_exit)
     .bind(serde_json::to_string(&task.input_data)?)
     .bind(serde_json::to_string(&task.input_mapping)?)
     .bind(optional_json_string(&task.output_data)?)
@@ -982,6 +1004,7 @@ mod tests {
 
     fn task(status: TaskStatus) -> TaskInstance {
         TaskInstance {
+            early_exit: false,
             task_def_id: "task-a".to_string(),
             status,
             satisfaction_status: TaskSatisfactionStatus::Satisfied,
@@ -1448,5 +1471,50 @@ mod tests {
             .unwrap();
         assert!(saved.tasks.contains_key("unchanged[1]"));
         assert!(saved.tasks.contains_key("added[1]"));
+    }
+
+    #[tokio::test]
+    async fn persists_task_early_exit_from_a_flag_only_event() {
+        let namespace = crate::core::namespace::test_namespace();
+        let storage = std::sync::Arc::new(storage().await);
+        let mut initial = instance("exit-flag", WorkflowStatus::Running);
+        initial
+            .tasks
+            .insert("task-a[2]".into(), task(TaskStatus::Completed));
+        let mut legacy = serde_json::to_value(&initial.tasks["task-a[2]"]).unwrap();
+        legacy.as_object_mut().unwrap().remove("early_exit");
+        assert!(
+            !serde_json::from_value::<TaskInstance>(legacy)
+                .unwrap()
+                .early_exit
+        );
+        let manager =
+            crate::core::workflow::state_manager::WorkflowStateManager::new(storage.clone());
+        manager
+            .commit_events(
+                &namespace,
+                "exit-flag",
+                vec![WorkflowInstanceEvent::WorkflowCreated { instance: initial }],
+            )
+            .await
+            .unwrap();
+        manager
+            .commit_events(
+                &namespace,
+                "exit-flag",
+                vec![WorkflowInstanceEvent::TaskEarlyExitSet {
+                    task_attempt_id: "task-a[2]".into(),
+                    early_exit: true,
+                }],
+            )
+            .await
+            .unwrap();
+        let saved = storage
+            .get_workflow_instance(&namespace, "exit-flag")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(saved.tasks["task-a[2]"].early_exit);
+        assert_eq!(saved.status, WorkflowStatus::Running);
     }
 }

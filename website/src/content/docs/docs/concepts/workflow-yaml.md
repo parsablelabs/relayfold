@@ -143,35 +143,44 @@ See [Bounded Loops](/relayfold/docs/concepts/bounded-loops/) for the full contro
 
 ## Early workflow exit
 
-Implementation is in progress; the core behavior below is implemented, while
-the interactions listed at the end of this section remain undecided.
-
-To complete a workflow when a task discovers there is no remaining work, select
-an output boolean using JSON Pointer:
+To allow a task to request successful early completion, enable:
 
 ```yaml
 control:
-  exit_workflow:
-    when: /no_work
+  allow_early_exit: true
 ```
 
-A successful, validated output with `true` at the selected pointer requests
-early completion, preserves the triggering task's output, and marks remaining
-pending tasks as `Skipped`. No new tasks will be dispatched. Already-running
-tasks finish, and the workflow completes once those tasks succeed;
-`Skipped` counts as terminal for completion. If an already-running task fails,
-the workflow becomes `Failed` under normal failure behavior. `false`
-continues normal execution. The selected field must exist and contain a boolean; a missing or non-boolean value fails the
-task and workflow. Output schema validation runs before the control is evaluated.
-A boolean by itself has no effect unless `control.exit_workflow` is configured.
-The control applies to every task kind; an API Call can select a response field with a pointer such as `/body/no_work`.
+The task requests exit by returning a top-level `workflow_exit_reason` string:
 
-There is no configured `reason` field. Workflow inspection identifies the
-triggering task attempt and pointer; task outputs can include additional context.
-Orchestrator info logs report each exit-control evaluation, including the workflow
-instance, task attempt, pointer, and whether execution continues, exit is requested,
-or validation fails. Exit requests include the pending-task count; validation
-failures include the error.
+```json
+{
+  "workflow_exit_reason": "All matching patterns are already covered."
+}
+```
+
+A missing or `null` reason continues normal execution. An empty or whitespace-only
+string, or another value type, fails the task and workflow when early exit is
+allowed. Without `allow_early_exit: true`, the field has no control effect.
+Output schema validation runs before the control is evaluated; if your schema
+restricts output fields, include `workflow_exit_reason` as a string or `null`.
+
+An exit request preserves the triggering task's output and marks remaining
+pending tasks as `Skipped`. No new tasks are dispatched. Already-running tasks
+finish, and the workflow completes once those tasks succeed; `Skipped` counts
+as terminal for completion. If an already-running task fails, the workflow
+becomes `Failed` under normal failure behavior.
+
+The control is independent of task kind. For an external API response that does
+not follow this output contract, use a downstream Function to interpret the
+response and return `workflow_exit_reason`, enabling early exit on that Function.
+There are no JSON Pointer conditions or static YAML reasons.
+
+The triggering attempt records `early_exit: true`, exposed in task status reports
+and task-result metadata. Its preserved output contains the dynamic reason. The
+`task_early_exit_set` event applies this flag to task state. Other attempts default
+to `false`; retries clear the flag. Orchestrator info logs report whether execution continues, exit
+is requested, or validation fails. Exit requests include the reason and pending-task
+count; validation failures include the error.
 Human-input results from tasks still running after exit, verifier-loop
 interactions, and pause interactions still require design decisions.
 

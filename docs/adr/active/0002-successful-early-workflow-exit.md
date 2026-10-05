@@ -4,7 +4,7 @@ status: accepted
 
 # Successful early workflow exit through a task output boolean
 
-Workflows can discover that no remaining work is needed while still executing downstream tasks, adding latency and Agent cost. For [issue #91](https://github.com/parsablelabs/relayfold/issues/91), we chose an explicit task control that completes the workflow successfully when a selected output boolean is true. This is an accepted design decision; the capability is not yet implemented.
+Workflows can discover that no remaining work is needed while still executing downstream tasks, adding latency and Agent cost. For [issue #91](https://github.com/parsablelabs/relayfold/issues/91), we chose an explicit task control that completes the workflow successfully when a selected output boolean is true. The original decision below is retained for context. The addendum dated 2026-10-05 supersedes the pointer-based schema and exit-event metadata.
 
 ## Decision
 
@@ -49,3 +49,43 @@ Persist the triggering task attempt ID and the configured JSON Pointer in an `ea
 - The ordering of early completion and an operator pause that arrives while the triggering task is running.
 
 These questions remain open and must be settled before implementing the affected behavior.
+
+
+## Addendum: task-provided exit reason (2026-10-05)
+
+Replace `control.exit_workflow.when` with explicit task permission:
+
+```yaml
+control:
+  allow_early_exit: true
+```
+
+An enabled task requests early completion by returning a top-level nonempty
+`workflow_exit_reason` string in its successful, validated output. The string is
+both the exit signal and the dynamic explanation. Absence or `null` means continue;
+empty or whitespace-only strings and other types fail control validation. Permission
+defaults to false, and without permission the field has no control effect.
+
+This replaces JSON Pointer selection, without retaining a second exit API. It also
+supersedes the earlier decision to infer the explanation from a pointer. Multiple
+exit causes within one task can produce distinct reasons without multiple YAML
+conditions, boolean flags, or matching precedence. Static YAML reasons are not
+supported: the task has the runtime context needed to explain its decision.
+
+External APIs need not implement this reserved field. A downstream validation
+Function can interpret any API response and return an exit reason, with permission
+enabled on that Function. The additional task execution and workflow code are an
+accepted tradeoff for keeping API-specific decisions outside the orchestrator and
+using one exit contract across task kinds.
+
+The triggering task attempt persists `early_exit: true`; new attempts default to
+`false`, and failed-attempt retries clear the flag. A `task_early_exit_set` event
+changes this task state, replacing the no-op `early_completion_requested` event
+and its metadata model. Task status reports and task-result metadata expose the
+flag; the preserved output contains `workflow_exit_reason` for the explanation.
+The flag is stored on task rows, without a separate workflow snapshot field or
+workflow database column. Workflow status is unchanged; scheduling and completion
+continue to use task statuses. Pending-task skipping, waiting for running tasks,
+normal failure behavior, and the outstanding lifecycle questions above retain
+their existing semantics. Output schemas that restrict properties must allow the
+reserved field when tasks return it.

@@ -118,6 +118,7 @@ mod tests {
         instance.tasks.insert(
             "ask[1]".to_string(),
             TaskInstance {
+                early_exit: false,
                 task_def_id: "ask".to_string(),
                 status: TaskStatus::InputNeeded {
                     input_request: "need input".to_string(),
@@ -134,6 +135,7 @@ mod tests {
         instance.tasks.insert(
             "independent[1]".to_string(),
             TaskInstance {
+                early_exit: false,
                 task_def_id: "independent".to_string(),
                 status: TaskStatus::Pending,
                 satisfaction_status: TaskSatisfactionStatus::Pending,

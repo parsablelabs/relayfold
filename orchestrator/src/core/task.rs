@@ -44,45 +44,19 @@ pub enum TaskTypeDef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TaskControl {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exit_workflow: Option<ExitWorkflowControl>,
+    #[serde(default)]
+    pub allow_early_exit: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verifier: Option<VerifierControlConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExitWorkflowControl {
-    pub when: String,
-}
-
-impl ExitWorkflowControl {
-    pub fn validate(&self) -> anyhow::Result<()> {
-        let pointer = &self.when;
-        if !pointer.is_empty() && !pointer.starts_with('/') {
-            anyhow::bail!("exit_workflow.when must be a JSON Pointer");
-        }
-        let mut chars = pointer.chars();
-        while let Some(c) = chars.next() {
-            if c == '~' && !matches!(chars.next(), Some('0' | '1')) {
-                anyhow::bail!("exit_workflow.when contains an invalid JSON Pointer escape");
-            }
-        }
-        Ok(())
-    }
-
-    pub fn evaluate(&self, output: &serde_json::Value) -> anyhow::Result<bool> {
-        self.validate()?;
-        output
-            .pointer(&self.when)
-            .and_then(serde_json::Value::as_bool)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "exit_workflow.when {} must select an existing boolean",
-                    self.when
-                )
-            })
+pub fn workflow_exit_reason(output: &serde_json::Value) -> anyhow::Result<Option<&str>> {
+    match output.get("workflow_exit_reason") {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(reason)) if !reason.trim().is_empty() => Ok(Some(reason)),
+        _ => anyhow::bail!("workflow_exit_reason must be null or a nonempty string"),
     }
 }
 
@@ -142,6 +116,9 @@ pub struct TaskInstance {
     /// Whether this attempt is eligible as a satisfied source for downstream data binding.
     #[serde(default)]
     pub satisfaction_status: TaskSatisfactionStatus,
+    /// Whether this attempt triggered successful early workflow exit.
+    #[serde(default)]
+    pub early_exit: bool,
     /// Raw human response that caused this continuation attempt, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub human_input: Option<serde_json::Value>,
@@ -389,48 +366,42 @@ apiCall:
         assert!(error.to_string().contains("unknown field `group`"));
     }
     #[test]
-    fn exit_pointer_handles_nested_arrays_escapes_and_root_boolean() {
-        for (pointer, output) in [
-            ("/body/no_work", json!({"body":{"no_work":true}})),
-            ("/items/0", json!({"items":[true]})),
-            ("/a~1b/~0", json!({"a/b":{"~":true}})),
-            ("", json!(true)),
+    fn exit_reason_accepts_absence_null_and_nonempty_strings() {
+        for output in [
+            json!({}),
+            json!({"workflow_exit_reason": null}),
+            json!(false),
         ] {
-            assert!(
-                ExitWorkflowControl {
-                    when: pointer.into()
-                }
-                .evaluate(&output)
-                .unwrap()
-            );
+            assert_eq!(workflow_exit_reason(&output).unwrap(), None);
         }
-        for pointer in ["no_work", "/bad~", "/bad~2"] {
-            assert!(
-                ExitWorkflowControl {
-                    when: pointer.into()
-                }
-                .validate()
-                .is_err()
-            );
+        let output = json!({"workflow_exit_reason": "Already processed"});
+        assert_eq!(
+            workflow_exit_reason(&output).unwrap(),
+            Some("Already processed")
+        );
+    }
+
+    #[test]
+    fn exit_reason_rejects_empty_strings_and_other_types() {
+        for value in [
+            json!(""),
+            json!(" \n\t"),
+            json!(true),
+            json!(1),
+            json!([]),
+            json!({}),
+        ] {
+            assert!(workflow_exit_reason(&json!({"workflow_exit_reason": value})).is_err());
         }
     }
 
     #[test]
-    fn exit_pointer_requires_a_boolean_without_coercion() {
-        let control = ExitWorkflowControl {
-            when: "/no_work".into(),
-        };
-        for output in [
-            json!({}),
-            json!({"no_work":"true"}),
-            json!({"no_work":1}),
-            json!({"no_work":null}),
-        ] {
-            assert!(
-                control.evaluate(&output).is_err(),
-                "accepted invalid output: {output}"
-            );
-        }
-        assert!(!control.evaluate(&json!({"no_work":false})).unwrap());
+    fn task_control_defaults_to_disabled_and_rejects_old_pointer_control() {
+        let control: TaskControl = serde_json::from_value(json!({})).unwrap();
+        assert!(!control.allow_early_exit);
+        assert!(
+            serde_json::from_value::<TaskControl>(json!({"exit_workflow": {"when": "/no_work"}}))
+                .is_err()
+        );
     }
 }

@@ -10,9 +10,8 @@ use crate::core::verifier::{
 use crate::core::worker::TaskDispatchConstraints;
 use crate::core::workflow::events::WorkflowInstanceEvent;
 use crate::core::workflow::models::{
-    EarlyCompletion, TaskStatusReport, VerifierFeedbackEntry, VerifierGenerationState,
-    VerifierStateStatus, VerifierStatusReport, WorkflowDef, WorkflowInstance, WorkflowStatus,
-    WorkflowStatusReport,
+    TaskStatusReport, VerifierFeedbackEntry, VerifierGenerationState, VerifierStateStatus,
+    VerifierStatusReport, WorkflowDef, WorkflowInstance, WorkflowStatus, WorkflowStatusReport,
 };
 use crate::core::workflow::state_manager::WorkflowStateManager;
 use crate::ports::storage::StoragePort;
@@ -75,6 +74,7 @@ impl WorkflowEngine {
             .tasks
             .iter()
             .map(|(task_attempt_id, t)| TaskStatusReport {
+                early_exit: t.early_exit,
                 task_attempt_id: task_attempt_id.clone(),
                 task_def_id: t.task_def_id.clone(),
                 status: t.status.clone(),
@@ -167,6 +167,7 @@ impl WorkflowEngine {
                 events.push(WorkflowInstanceEvent::TaskMaterialized {
                     task_attempt_id,
                     task: TaskInstance {
+                        early_exit: false,
                         task_def_id: task_def.id.clone(),
                         status: TaskStatus::Pending,
                         satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -439,26 +440,22 @@ impl WorkflowEngine {
                             let exit_control = task_def
                                 .control
                                 .as_ref()
-                                .and_then(|control| control.exit_workflow.as_ref());
+                                .is_some_and(|control| control.allow_early_exit);
                             // Exit controls preserve the output even without an output schema.
-                            if output_schema.is_some() || exit_control.is_some() {
+                            if output_schema.is_some() || exit_control {
                                 events.push(WorkflowInstanceEvent::TaskOutputRecorded {
                                     task_attempt_id: task_attempt_id.clone(),
                                     output_data: Some(output.clone()),
                                 });
                             }
 
-                            if let Some(control) = exit_control {
-                                match control.evaluate(&output) {
-                                    Ok(true) => {
-                                        events.push(
-                                            WorkflowInstanceEvent::EarlyCompletionRequested {
-                                                metadata: EarlyCompletion {
-                                                    task_attempt_id: task_attempt_id.clone(),
-                                                    output_pointer: control.when.clone(),
-                                                },
-                                            },
-                                        );
+                            if exit_control {
+                                match crate::core::task::workflow_exit_reason(&output) {
+                                    Ok(Some(reason)) => {
+                                        events.push(WorkflowInstanceEvent::TaskEarlyExitSet {
+                                            task_attempt_id: task_attempt_id.clone(),
+                                            early_exit: true,
+                                        });
 
                                         let mut pending_ids: Vec<_> = workflow_instance
                                             .tasks
@@ -473,9 +470,9 @@ impl WorkflowEngine {
                                         tracing::info!(
                                             workflow_instance_id = %workflow_inst_id,
                                             task_attempt_id = %task_attempt_id,
-                                            output_pointer = %control.when,
                                             pending_task_count = pending_ids.len(),
-                                            "Early-exit control evaluated to true; requesting successful workflow exit"
+                                            reason = %reason,
+                                            "Task provided an exit reason; requesting successful workflow exit"
                                         );
 
                                         for id in pending_ids {
@@ -492,19 +489,17 @@ impl WorkflowEngine {
                                             );
                                         }
                                     }
-                                    Ok(false) => {
+                                    Ok(None) => {
                                         tracing::info!(
                                             workflow_instance_id = %workflow_inst_id,
                                             task_attempt_id = %task_attempt_id,
-                                            output_pointer = %control.when,
-                                            "Early-exit control evaluated to false; continuing workflow execution"
+                                            "Task provided no exit reason; continuing workflow execution"
                                         );
                                     }
                                     Err(error) => {
                                         tracing::info!(
                                             workflow_instance_id = %workflow_inst_id,
                                             task_attempt_id = %task_attempt_id,
-                                            output_pointer = %control.when,
                                             error = %error,
                                             "Early-exit control validation failed; failing task and workflow"
                                         );
@@ -970,6 +965,7 @@ impl WorkflowEngine {
             events.push(WorkflowInstanceEvent::TaskMaterialized {
                 task_attempt_id,
                 task: TaskInstance {
+                    early_exit: false,
                     task_def_id: task_def_id.clone(),
                     status: TaskStatus::Pending,
                     satisfaction_status: TaskSatisfactionStatus::Pending,

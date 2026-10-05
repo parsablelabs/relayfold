@@ -120,6 +120,7 @@ async fn persists_and_reconstructs_workflow_state() {
         },
     };
     let task = TaskInstance {
+        early_exit: true,
         task_def_id: "taska".to_string(),
         status: TaskStatus::Completed,
         satisfaction_status: TaskSatisfactionStatus::Satisfied,
@@ -164,6 +165,7 @@ async fn persists_and_reconstructs_workflow_state() {
         .unwrap()
         .unwrap();
     assert_eq!(saved.version, 1);
+    assert!(saved.tasks["taska[1]"].early_exit);
     assert_eq!(
         saved.tasks["taska[1]"].output_data,
         Some(json!({"output": 2}))
