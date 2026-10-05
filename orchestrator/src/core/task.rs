@@ -414,4 +414,23 @@ apiCall:
             );
         }
     }
+
+    #[test]
+    fn exit_pointer_requires_a_boolean_without_coercion() {
+        let control = ExitWorkflowControl {
+            when: "/no_work".into(),
+        };
+        for output in [
+            json!({}),
+            json!({"no_work":"true"}),
+            json!({"no_work":1}),
+            json!({"no_work":null}),
+        ] {
+            assert!(
+                control.evaluate(&output).is_err(),
+                "accepted invalid output: {output}"
+            );
+        }
+        assert!(!control.evaluate(&json!({"no_work":false})).unwrap());
+    }
 }
