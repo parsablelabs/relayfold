@@ -46,17 +46,15 @@ pub enum TaskTypeDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskControl {
-    #[serde(default)]
-    pub allow_early_exit: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verifier: Option<VerifierControlConfig>,
 }
 
 pub fn workflow_exit_reason(output: &serde_json::Value) -> anyhow::Result<Option<&str>> {
-    match output.get("workflow_exit_reason") {
+    match output.get("_workflow_exit_reason") {
         None | Some(serde_json::Value::Null) => Ok(None),
         Some(serde_json::Value::String(reason)) if !reason.trim().is_empty() => Ok(Some(reason)),
-        _ => anyhow::bail!("workflow_exit_reason must be null or a nonempty string"),
+        _ => anyhow::bail!("_workflow_exit_reason must be null or a nonempty string"),
     }
 }
 
@@ -369,12 +367,12 @@ apiCall:
     fn exit_reason_accepts_absence_null_and_nonempty_strings() {
         for output in [
             json!({}),
-            json!({"workflow_exit_reason": null}),
+            json!({"_workflow_exit_reason": null}),
             json!(false),
         ] {
             assert_eq!(workflow_exit_reason(&output).unwrap(), None);
         }
-        let output = json!({"workflow_exit_reason": "Already processed"});
+        let output = json!({"_workflow_exit_reason": "Already processed"});
         assert_eq!(
             workflow_exit_reason(&output).unwrap(),
             Some("Already processed")
@@ -391,14 +389,13 @@ apiCall:
             json!([]),
             json!({}),
         ] {
-            assert!(workflow_exit_reason(&json!({"workflow_exit_reason": value})).is_err());
+            assert!(workflow_exit_reason(&json!({"_workflow_exit_reason": value})).is_err());
         }
     }
 
     #[test]
-    fn task_control_defaults_to_disabled_and_rejects_old_pointer_control() {
-        let control: TaskControl = serde_json::from_value(json!({})).unwrap();
-        assert!(!control.allow_early_exit);
+    fn task_control_rejects_obsolete_exit_configuration() {
+        assert!(serde_json::from_value::<TaskControl>(json!({"allow_early_exit": true})).is_err());
         assert!(
             serde_json::from_value::<TaskControl>(json!({"exit_workflow": {"when": "/no_work"}}))
                 .is_err()

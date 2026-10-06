@@ -4,7 +4,7 @@ status: accepted
 
 # Successful early workflow exit through a task output boolean
 
-Workflows can discover that no remaining work is needed while still executing downstream tasks, adding latency and Agent cost. For [issue #91](https://github.com/parsablelabs/relayfold/issues/91), we chose an explicit task control that completes the workflow successfully when a selected output boolean is true. The original decision below is retained for context. The addendum dated 2026-10-05 supersedes the pointer-based schema and exit-event metadata.
+Workflows can discover that no remaining work is needed while still executing downstream tasks, adding latency and Agent cost. For [issue #91](https://github.com/parsablelabs/relayfold/issues/91), we chose an explicit task control that completes the workflow successfully when a selected output boolean is true. The original decision below is retained for context. The addenda dated 2026-10-05 supersede the pointer-based schema and exit-event metadata.
 
 ## Decision
 
@@ -107,3 +107,19 @@ continue to use task statuses. Pending-task skipping, waiting for running tasks,
 normal failure behavior, and the outstanding lifecycle questions above retain
 their existing semantics. Output schemas that restrict properties must allow the
 reserved field when tasks return it.
+
+## Addendum: reserved output field without YAML permission (2026-10-05)
+
+Reserve the exact top-level `_workflow_exit_reason` field in every task output.
+Remove `control.allow_early_exit`; no YAML opt-in is needed. A nonempty string
+triggers successful early exit after output-schema validation. Missing or `null`
+means continue, while empty or whitespace-only strings and other value types fail
+control validation. The unprefixed `workflow_exit_reason` and other underscore-prefixed
+fields are ordinary output data with no exit effect. There is no compatibility
+alias for the previous reason field or permission setting.
+
+Preserve the triggering output, including when no output schema is declared, and
+set its task attempt's `early_exit` flag. Skipping, completion, verifier interruption,
+human-input continuation, and failure rules remain as agreed above. Strict output
+schemas must allow `_workflow_exit_reason` when it may be returned. This addendum
+supersedes the YAML permission and unprefixed field in the preceding addendum.

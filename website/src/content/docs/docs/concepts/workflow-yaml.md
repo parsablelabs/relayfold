@@ -54,7 +54,7 @@ tasks:
 | `output_schema` | No | JSON Schema for task output. Verifier tasks must omit this because RelayFold injects the decision schema. |
 | `workspace` | No | Workspace group assignment. |
 | `required_credentials` | Yes | Named credentials required before execution. Use `[]` when none are needed. |
-| `control` | No | Verifier settings for bounded loops or successful early workflow exit. |
+| `control` | No | Verifier settings for bounded loops. |
 
 Input and output schemas support standard format validation, including `date`,
 `email`, and `uri`.
@@ -143,26 +143,23 @@ See [Bounded Loops](/relayfold/docs/concepts/bounded-loops/) for the full contro
 
 ## Early workflow exit
 
-To allow a task to request successful early completion, enable:
+RelayFold reserves the exact top-level output field `_workflow_exit_reason` for
+successful early completion. No YAML toggle is required; other underscore-prefixed
+fields are ordinary task data.
 
-```yaml
-control:
-  allow_early_exit: true
-```
-
-The task requests exit by returning a top-level `workflow_exit_reason` string:
+The task requests exit by returning a top-level `_workflow_exit_reason` string:
 
 ```json
 {
-  "workflow_exit_reason": "All matching patterns are already covered."
+  "_workflow_exit_reason": "All matching patterns are already covered."
 }
 ```
 
 A missing or `null` reason continues normal execution. An empty or whitespace-only
-string, or another value type, fails the task and workflow when early exit is
-allowed. Without `allow_early_exit: true`, the field has no control effect.
+string, or another value type, fails the task and workflow. The unprefixed
+`workflow_exit_reason` is ordinary data and has no control effect.
 Output schema validation runs before the control is evaluated; if your schema
-restricts output fields, include `workflow_exit_reason` as a string or `null`.
+restricts output fields, include `_workflow_exit_reason` as a string or `null`.
 
 An exit request preserves the triggering task's output and marks remaining
 pending tasks as `Skipped`. Skipped tasks are not dispatched. Already-running tasks
@@ -172,7 +169,7 @@ becomes `Failed` under normal failure behavior.
 
 The control is independent of task kind. For an external API response that does
 not follow this output contract, use a downstream Function to interpret the
-response and return `workflow_exit_reason`, enabling early exit on that Function.
+response and return `_workflow_exit_reason` at the top level.
 There are no JSON Pointer conditions or static YAML reasons.
 
 The triggering attempt records `early_exit: true`, exposed in task status reports

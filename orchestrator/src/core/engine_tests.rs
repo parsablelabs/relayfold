@@ -439,7 +439,6 @@ fn agent_verifier_task(id: &str, rerun_from_task_id: Option<&str>) -> TaskDef {
     };
     task.output_schema = None;
     task.control = Some(TaskControl {
-        allow_early_exit: false,
         verifier: Some(VerifierControlConfig {
             max_iterations: 2,
             on_exhausted_continue: false,
@@ -458,7 +457,6 @@ fn agent_verifier_task_with_policy(
 ) -> TaskDef {
     let mut task = agent_verifier_task(id, rerun_from_task_id);
     task.control = Some(TaskControl {
-        allow_early_exit: false,
         verifier: Some(VerifierControlConfig {
             max_iterations,
             on_exhausted_continue,
@@ -477,7 +475,6 @@ fn function_verifier_task(id: &str, rerun_from_task_id: Option<&str>) -> TaskDef
     });
     task.output_schema = Some(verifier_decision_schema());
     task.control = Some(TaskControl {
-        allow_early_exit: false,
         verifier: Some(VerifierControlConfig {
             max_iterations: 2,
             on_exhausted_continue: false,
@@ -2286,7 +2283,6 @@ impl TaskDispatchPort for ExitOutputDispatcher {
 async fn run_exit_case(
     output: serde_json::Value,
     schema: Option<serde_json::Value>,
-    with_control: bool,
 ) -> (WorkflowInstance, Vec<String>, bool, Vec<(String, bool)>) {
     let dispatcher = Arc::new(ExitOutputDispatcher {
         output,
@@ -2295,10 +2291,6 @@ async fn run_exit_case(
     let engine = make_engine_with_dispatcher(dispatcher.clone());
     let mut exit = task_def("a-exit", json!({"type": "object"}));
     exit.output_schema = schema;
-    exit.control = Some(TaskControl {
-        verifier: None,
-        allow_early_exit: with_control,
-    });
     let id = setup(
         &engine,
         WorkflowDef {
@@ -2356,8 +2348,8 @@ async fn run_exit_case(
 #[tokio::test]
 async fn early_exit_skips_independent_and_downstream_tasks_and_preserves_unschematized_output() {
     let output =
-        json!({"workflow_exit_reason":"already processed", "explanation":"already processed"});
-    let (instance, calls, failed, exit_events) = run_exit_case(output.clone(), None, true).await;
+        json!({"_workflow_exit_reason":"already processed", "explanation":"already processed"});
+    let (instance, calls, failed, exit_events) = run_exit_case(output.clone(), None).await;
     assert!(!failed);
     assert_eq!(calls, vec!["a-exit"]);
     assert_eq!(instance.status, WorkflowStatus::Completed);
@@ -2377,15 +2369,14 @@ async fn early_exit_skips_independent_and_downstream_tasks_and_preserves_unschem
 }
 
 #[tokio::test]
-async fn execution_continues_without_reason_or_without_permission() {
-    for (output, with_control) in [
-        (json!({}), true),
-        (json!({"workflow_exit_reason":null}), true),
-        (json!({"workflow_exit_reason":"already processed"}), false),
-        (json!({"workflow_exit_reason":false}), false),
+async fn execution_continues_without_reserved_reason() {
+    for output in [
+        json!({}),
+        json!({"_workflow_exit_reason":null}),
+        json!({"workflow_exit_reason":"ordinary application data"}),
+        json!({"workflow_exit_reason":false}),
     ] {
-        let (instance, calls, failed, exit_events) =
-            run_exit_case(output, None, with_control).await;
+        let (instance, calls, failed, exit_events) = run_exit_case(output, None).await;
         assert!(!failed);
         assert_eq!(calls, vec!["a-exit", "b-independent", "c-downstream"]);
         assert_eq!(instance.status, WorkflowStatus::Completed);
@@ -2396,11 +2387,11 @@ async fn execution_continues_without_reason_or_without_permission() {
 #[tokio::test]
 async fn invalid_exit_reason_fails_without_skipping_pending_tasks() {
     for output in [
-        json!({"workflow_exit_reason":""}),
-        json!({"workflow_exit_reason":"  "}),
-        json!({"workflow_exit_reason":true}),
+        json!({"_workflow_exit_reason":""}),
+        json!({"_workflow_exit_reason":"  "}),
+        json!({"_workflow_exit_reason":true}),
     ] {
-        let (instance, calls, failed, exit_events) = run_exit_case(output, None, true).await;
+        let (instance, calls, failed, exit_events) = run_exit_case(output, None).await;
         assert!(exit_events.is_empty());
         assert!(failed);
         assert_eq!(calls, vec!["a-exit"]);
@@ -2416,9 +2407,8 @@ async fn invalid_exit_reason_fails_without_skipping_pending_tasks() {
 #[tokio::test]
 async fn invalid_output_schema_cannot_request_early_exit() {
     let (instance, calls, failed, exit_events) = run_exit_case(
-        json!({"workflow_exit_reason":"already processed"}),
+        json!({"_workflow_exit_reason":"already processed"}),
         Some(json!({"type":"string"})),
-        true,
     )
     .await;
     assert_eq!(calls, vec!["a-exit"]);
@@ -2434,15 +2424,11 @@ async fn invalid_output_schema_cannot_request_early_exit() {
 #[tokio::test]
 async fn early_exit_retains_prior_outputs_and_running_attempts_and_waits_for_them() {
     let dispatcher = Arc::new(ExitOutputDispatcher {
-        output: json!({"workflow_exit_reason":"already processed"}),
+        output: json!({"_workflow_exit_reason":"already processed"}),
         calls: StdMutex::new(vec![]),
     });
     let engine = make_engine_with_dispatcher(dispatcher.clone());
-    let mut exit = task_def("exit", json!({"type":"object"}));
-    exit.control = Some(TaskControl {
-        verifier: None,
-        allow_early_exit: true,
-    });
+    let exit = task_def("exit", json!({"type":"object"}));
     let def = WorkflowDef {
         id: "running-exit".into(),
         description: String::new(),
@@ -2552,7 +2538,8 @@ async fn early_exit_retains_prior_outputs_and_running_attempts_and_waits_for_the
     assert_eq!(finished.status, WorkflowStatus::Completed);
     assert_eq!(finished.tasks["pending[1]"].status, TaskStatus::Skipped);
     assert_eq!(finished.tasks["running[2]"].status, TaskStatus::Completed);
-    assert!(!finished.tasks["running[2]"].early_exit);
+    // The continuation also returns the reserved reason and triggers exit.
+    assert!(finished.tasks["running[2]"].early_exit);
     assert_eq!(*dispatcher.calls.lock().unwrap(), vec!["exit", "running"]);
 }
 
@@ -2560,15 +2547,11 @@ async fn early_exit_retains_prior_outputs_and_running_attempts_and_waits_for_the
 async fn skipped_verifier_slices_complete_without_acceptance_or_new_generations() {
     for initialized_before_exit in [true, false] {
         let dispatcher = Arc::new(ExitOutputDispatcher {
-            output: json!({"workflow_exit_reason":"already processed"}),
+            output: json!({"_workflow_exit_reason":"already processed"}),
             calls: StdMutex::new(vec![]),
         });
         let engine = make_engine_with_dispatcher(dispatcher.clone());
-        let mut exit = task_def("a-exit", json!({"type":"object"}));
-        exit.control = Some(TaskControl {
-            verifier: None,
-            allow_early_exit: true,
-        });
+        let exit = task_def("a-exit", json!({"type":"object"}));
         let mut bindings = vec![DataBinding {
             source_task_id: "b-work".into(),
             target_task_id: "c-verify".into(),
@@ -2614,12 +2597,11 @@ async fn skipped_verifier_slices_complete_without_acceptance_or_new_generations(
 #[tokio::test]
 async fn verifier_can_trigger_exit_without_retrying_or_exhaustion_failure() {
     let dispatcher = Arc::new(ExitOutputDispatcher {
-        output: json!({"decision":"continue", "feedback":"retry normally", "workflow_exit_reason":"report no longer needed"}),
+        output: json!({"decision":"continue", "feedback":"retry normally", "_workflow_exit_reason":"report no longer needed"}),
         calls: StdMutex::new(vec![]),
     });
     let engine = make_engine_with_dispatcher(dispatcher.clone());
-    let mut verifier = agent_verifier_task_with_policy("verify", None, 1, false);
-    verifier.control.as_mut().unwrap().allow_early_exit = true;
+    let verifier = agent_verifier_task_with_policy("verify", None, 1, false);
     let id = setup(
         &engine,
         WorkflowDef {

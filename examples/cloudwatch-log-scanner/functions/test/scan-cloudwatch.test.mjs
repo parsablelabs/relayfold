@@ -85,7 +85,7 @@ test("returns grouped, original samples across empty pages and both regions", as
     ],
   });
   assert.equal(result.total_events, 2);
-  assert.equal(result.workflow_exit_reason, null);
+  assert.equal(result._workflow_exit_reason, null);
   assert.equal(result.groups.length, 1);
   const group = result.groups[0];
   assert.equal(group.count, 2);
@@ -330,7 +330,7 @@ test("requests early exit only after finishing an empty scan", async () => {
   const result = await f.scan(context);
   assert.equal(f.requests.length, 2);
   assert.equal(
-    result.workflow_exit_reason,
+    result._workflow_exit_reason,
     "No matching log patterns were found.",
   );
   assert.deepEqual(result.groups, []);

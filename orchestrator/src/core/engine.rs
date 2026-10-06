@@ -437,97 +437,93 @@ impl WorkflowEngine {
                                     satisfaction_status: TaskSatisfactionStatus::Satisfied,
                                 });
                             }
-                            let exit_control = task_def
-                                .control
-                                .as_ref()
-                                .is_some_and(|control| control.allow_early_exit);
-                            // Exit controls preserve the output even without an output schema.
-                            if output_schema.is_some() || exit_control {
+                            // Preserve exit output even when no output schema is declared.
+                            if output_schema.is_some()
+                                || output.get("_workflow_exit_reason").is_some()
+                            {
                                 events.push(WorkflowInstanceEvent::TaskOutputRecorded {
                                     task_attempt_id: task_attempt_id.clone(),
                                     output_data: Some(output.clone()),
                                 });
                             }
 
-                            if exit_control {
-                                match crate::core::task::workflow_exit_reason(&output) {
-                                    Ok(Some(reason)) => {
-                                        events.push(WorkflowInstanceEvent::TaskEarlyExitSet {
-                                            task_attempt_id: task_attempt_id.clone(),
-                                            early_exit: true,
+                            match crate::core::task::workflow_exit_reason(&output) {
+                                Ok(Some(reason)) => {
+                                    events.push(WorkflowInstanceEvent::TaskEarlyExitSet {
+                                        task_attempt_id: task_attempt_id.clone(),
+                                        early_exit: true,
+                                    });
+
+                                    let mut pending_ids: Vec<_> = workflow_instance
+                                        .tasks
+                                        .iter()
+                                        .filter(|(_, task)| task.status == TaskStatus::Pending)
+                                        .map(|(id, _)| id.clone())
+                                        .collect();
+
+                                    // sorting IDs to keep even order deterministic when persisted
+                                    pending_ids.sort();
+
+                                    tracing::info!(
+                                        workflow_instance_id = %workflow_inst_id,
+                                        task_attempt_id = %task_attempt_id,
+                                        pending_task_count = pending_ids.len(),
+                                        reason = %reason,
+                                        "Task provided an exit reason; requesting successful workflow exit"
+                                    );
+
+                                    for id in pending_ids {
+                                        events.push(WorkflowInstanceEvent::TaskStatusChanged {
+                                            task_attempt_id: id.clone(),
+                                            status: TaskStatus::Skipped,
                                         });
-
-                                        let mut pending_ids: Vec<_> = workflow_instance
-                                            .tasks
-                                            .iter()
-                                            .filter(|(_, task)| task.status == TaskStatus::Pending)
-                                            .map(|(id, _)| id.clone())
-                                            .collect();
-
-                                        // sorting IDs to keep even order deterministic when persisted
-                                        pending_ids.sort();
-
-                                        tracing::info!(
-                                            workflow_instance_id = %workflow_inst_id,
-                                            task_attempt_id = %task_attempt_id,
-                                            pending_task_count = pending_ids.len(),
-                                            reason = %reason,
-                                            "Task provided an exit reason; requesting successful workflow exit"
-                                        );
-
-                                        for id in pending_ids {
-                                            events.push(WorkflowInstanceEvent::TaskStatusChanged {
-                                                task_attempt_id: id.clone(),
-                                                status: TaskStatus::Skipped,
-                                            });
-                                            events.push(
-                                                WorkflowInstanceEvent::TaskSatisfactionChanged {
-                                                    task_attempt_id: id,
-                                                    satisfaction_status:
-                                                        TaskSatisfactionStatus::Unsatisfied,
-                                                },
-                                            );
-                                        }
-                                    }
-                                    Ok(None) => {
-                                        tracing::info!(
-                                            workflow_instance_id = %workflow_inst_id,
-                                            task_attempt_id = %task_attempt_id,
-                                            "Task provided no exit reason; continuing workflow execution"
-                                        );
-                                    }
-                                    Err(error) => {
-                                        tracing::info!(
-                                            workflow_instance_id = %workflow_inst_id,
-                                            task_attempt_id = %task_attempt_id,
-                                            error = %error,
-                                            "Early-exit control validation failed; failing task and workflow"
-                                        );
-
-                                        events.extend([
-                                            WorkflowInstanceEvent::TaskStatusChanged {
-                                                task_attempt_id: task_attempt_id.clone(),
-                                                status: TaskStatus::Failed,
-                                            },
+                                        events.push(
                                             WorkflowInstanceEvent::TaskSatisfactionChanged {
-                                                task_attempt_id: task_attempt_id.clone(),
+                                                task_attempt_id: id,
                                                 satisfaction_status:
                                                     TaskSatisfactionStatus::Unsatisfied,
                                             },
-                                            WorkflowInstanceEvent::WorkflowStatusChanged {
-                                                status: WorkflowStatus::Failed,
-                                            },
-                                        ]);
-                                        self.commit_task_result_events_preserving_pause(
-                                            namespace,
-                                            &state_manager,
-                                            &workflow_inst_id,
-                                            workflow_instance,
-                                            events,
-                                        )
-                                        .await?;
-                                        return Err(error);
+                                        );
                                     }
+                                }
+                                Ok(None) => {
+                                    tracing::info!(
+                                        workflow_instance_id = %workflow_inst_id,
+                                        task_attempt_id = %task_attempt_id,
+                                        "Task provided no exit reason; continuing workflow execution"
+                                    );
+                                }
+                                Err(error) => {
+                                    tracing::info!(
+                                        workflow_instance_id = %workflow_inst_id,
+                                        task_attempt_id = %task_attempt_id,
+                                        error = %error,
+                                        "Early-exit control validation failed; failing task and workflow"
+                                    );
+
+                                    events.extend([
+                                        WorkflowInstanceEvent::TaskStatusChanged {
+                                            task_attempt_id: task_attempt_id.clone(),
+                                            status: TaskStatus::Failed,
+                                        },
+                                        WorkflowInstanceEvent::TaskSatisfactionChanged {
+                                            task_attempt_id: task_attempt_id.clone(),
+                                            satisfaction_status:
+                                                TaskSatisfactionStatus::Unsatisfied,
+                                        },
+                                        WorkflowInstanceEvent::WorkflowStatusChanged {
+                                            status: WorkflowStatus::Failed,
+                                        },
+                                    ]);
+                                    self.commit_task_result_events_preserving_pause(
+                                        namespace,
+                                        &state_manager,
+                                        &workflow_inst_id,
+                                        workflow_instance,
+                                        events,
+                                    )
+                                    .await?;
+                                    return Err(error);
                                 }
                             }
 

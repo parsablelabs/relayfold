@@ -18,7 +18,7 @@ export default function run({ inputs }) {
   return {
     ...scan,
     groups,
-    workflow_exit_reason:
+    _workflow_exit_reason:
       groups.length === 0 ? "No uncovered log patterns remain." : null,
   };
 }

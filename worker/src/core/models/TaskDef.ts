@@ -29,7 +29,6 @@ export interface TaskDef {
 }
 
 export interface TaskControl {
-    allow_early_exit?: boolean;
     verifier?: VerifierControlConfig;
 }
 

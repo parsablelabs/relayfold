@@ -124,7 +124,7 @@ export function createScanner({
       end_time: new Date(end).toISOString(),
       dry_run: config.dry_run ?? false,
       total_events: total,
-      workflow_exit_reason:
+      _workflow_exit_reason:
         groups.size === 0 ? "No matching log patterns were found." : null,
       truncated: truncation.length > 0,
       truncation,

@@ -111,7 +111,7 @@ When a limit prevents further scanning, the function returns collected data with
 the next target; event and pattern limits stop the scan globally. Counts cover
 retained events only. Complete scans return `truncated: false` and an empty list.
 AWS errors and repeated pagination tokens still fail the task. The output includes
-`workflow_exit_reason: "No matching log patterns were found."` when no groups were collected, otherwise `null`. This describes
+`_workflow_exit_reason: "No matching log patterns were found."` when no groups were collected, otherwise `null`. This describes
 retained patterns; truncation metadata still indicates incomplete scan coverage.
 
 Samples preserve original values and formatting, apart from the size cap.
@@ -120,15 +120,15 @@ normalized only in the internal grouping signature; samples are not normalized.
 
 `fetch_issues` reads `inputs[0].repository` and returns `{ repository, issues }`. It fetches every page of open GitHub issues labeled `relayfold`, excludes pull requests, and returns only `number`, `title`, `body`, and `html_url` per issue. GitHub failures or pagination-limit exhaustion fail the task rather than returning an incomplete list. It runs independently of scanning; analysis and verification receive both results. Their semantic duplicate checks cover this open labeled list; the publisher retains its final fingerprint check across open and closed issues. Published issues receive the `relayfold` label.
 
-`prune_covered_logs` receives the scan and fetched open issues in either order, requires matching repositories, and removes groups whose fingerprints appear in exact current issue markers. It recomputes `workflow_exit_reason`, returning "No uncovered log patterns remain." when the remaining groups are empty and `null` otherwise. It preserves all other scan metadata, including `total_events` (the count before pruning), samples for remaining groups, and truncation information. It has no credentials, network calls, or persistent cache. Only open issues labeled `relayfold` from `fetch_issues` participate; unmarked and closed issues do not suppress patterns at this stage.
+`prune_covered_logs` receives the scan and fetched open issues in either order, requires matching repositories, and removes groups whose fingerprints appear in exact current issue markers. It recomputes `_workflow_exit_reason`, returning "No uncovered log patterns remain." when the remaining groups are empty and `null` otherwise. It preserves all other scan metadata, including `total_events` (the count before pruning), samples for remaining groups, and truncation information. It has no credentials, network calls, or persistent cache. Only open issues labeled `relayfold` from `fetch_issues` participate; unmarked and closed issues do not suppress patterns at this stage.
 
-Both `scan-cloudwatch` and `prune-covered-logs` declare
-`control.allow_early_exit: true` in the example workflow. An empty scan or
+Both `scan-cloudwatch` and `prune-covered-logs` return the reserved top-level
+`_workflow_exit_reason` field. No YAML toggle is needed. An empty scan or
 fully covered scan completes successfully, skips pending analysis, verification,
 publishing, and labeling tasks, and preserves the triggering output. Independent
 issue fetching may already have run. When patterns remain, analysis, verification,
 and publishing receive the pruned scan as before. A no-actionable-findings analysis
-still goes through verification; no exit control is configured inside that loop.
+still goes through verification; these Agents do not return the reserved exit field.
 
 `publish_issues` accepts the pruned scanner output and an accepted verifier envelope
 `{"decision":"complete","output":<analysis>}` in `inputs` (in either order).

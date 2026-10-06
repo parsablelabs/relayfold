@@ -519,7 +519,7 @@ curl -sS "$RELAYFOLD_URL/workflows/hello-workflow-1780000000000000000/tasks/hell
 Task status reports and task-result metadata include `early_exit`. It is `true`
 on the completed attempt that triggered early exit and `false` on other attempts,
 including those skipped as a result. The saved task output contains
-`workflow_exit_reason`, which explains why it exited.
+`_workflow_exit_reason`, which explains why it exited.
 
 The state-changing `task_early_exit_set` event records the flag:
 

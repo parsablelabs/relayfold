@@ -35,7 +35,7 @@ test("prunes exact issue markers, preserving remaining evidence and scan metadat
     assert.deepEqual(result, {
       ...scan,
       groups: [scan.groups[1]],
-      workflow_exit_reason: null,
+      _workflow_exit_reason: null,
     });
     assert.equal(scan.groups.length, 2);
   }
@@ -52,7 +52,7 @@ test("retains unmatched groups, including text without a valid current marker", 
   ])
     assert.deepEqual(prune({ inputs: [scan, fetched(issues)] }), {
       ...scan,
-      workflow_exit_reason: null,
+      _workflow_exit_reason: null,
     });
 });
 
@@ -69,7 +69,7 @@ test("all covered or empty scans produce no-work input for publishing", async ()
     });
     assert.deepEqual(result.groups, []);
     assert.equal(
-      result.workflow_exit_reason,
+      result._workflow_exit_reason,
       "No uncovered log patterns remain.",
     );
     const published = await publish({
@@ -84,19 +84,19 @@ test("recomputes exit reason from remaining groups instead of trusting the upstr
   assert.equal(
     prune({
       inputs: [
-        { ...scan, workflow_exit_reason: "Upstream exit reason" },
+        { ...scan, _workflow_exit_reason: "Upstream exit reason" },
         fetched([]),
       ],
-    }).workflow_exit_reason,
+    })._workflow_exit_reason,
     null,
   );
   assert.equal(
     prune({
       inputs: [
-        { ...scan, workflow_exit_reason: null },
+        { ...scan, _workflow_exit_reason: null },
         fetched([{ body: `${marker(first)}\n${marker(second)}` }]),
       ],
-    }).workflow_exit_reason,
+    })._workflow_exit_reason,
     "No uncovered log patterns remain.",
   );
 });
@@ -128,6 +128,6 @@ test("generated pruning artifact runs without dependencies", async () => {
   );
   assert.deepEqual(
     module.default({ inputs: [scan, fetched([{ body: marker(first) }])] }),
-    { ...scan, groups: [scan.groups[1]], workflow_exit_reason: null },
+    { ...scan, groups: [scan.groups[1]], _workflow_exit_reason: null },
   );
 });
