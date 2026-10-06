@@ -15,6 +15,11 @@ pub enum WorkflowInstanceEvent {
     WorkflowCreated { instance: WorkflowInstance },
     /// Changes the overall workflow instance status.
     WorkflowStatusChanged { status: WorkflowStatus },
+    /// Records whether a concrete attempt triggered early workflow exit.
+    TaskEarlyExitSet {
+        task_attempt_id: String,
+        early_exit: bool,
+    },
     /// Resets in-flight running workflow or task state after orchestrator restart.
     StartupRecoveryApplied { task_attempt_ids: Vec<String> },
     /// Adds a concrete task attempt to the workflow instance.
@@ -102,6 +107,12 @@ pub fn apply_workflow_instance_event(
         }
         WorkflowInstanceEvent::WorkflowStatusChanged { status } => {
             instance.status = status.clone();
+        }
+        WorkflowInstanceEvent::TaskEarlyExitSet {
+            task_attempt_id,
+            early_exit,
+        } => {
+            task_mut(instance, task_attempt_id)?.early_exit = *early_exit;
         }
         WorkflowInstanceEvent::StartupRecoveryApplied { task_attempt_ids } => {
             if instance.status == WorkflowStatus::Running {
@@ -205,6 +216,7 @@ pub fn apply_workflow_instance_event(
                 );
             }
             let continuation = TaskInstance {
+                early_exit: false,
                 task_def_id,
                 status: TaskStatus::Pending,
                 satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -265,6 +277,9 @@ pub fn changed_task_attempt_ids(events: &[WorkflowEventRecord]) -> HashSet<Strin
                 task_attempt_ids.extend(recovered_task_attempt_ids.iter().cloned());
             }
             WorkflowInstanceEvent::TaskMaterialized {
+                task_attempt_id, ..
+            }
+            | WorkflowInstanceEvent::TaskEarlyExitSet {
                 task_attempt_id, ..
             }
             | WorkflowInstanceEvent::TaskStatusChanged {
@@ -350,6 +365,7 @@ fn reset_failed_task_for_retry(
         task.status = TaskStatus::Pending;
         task.satisfaction_status = TaskSatisfactionStatus::Pending;
         task.output_data = None;
+        task.early_exit = false;
         task.verifier_metadata = None;
     }
 
@@ -388,6 +404,7 @@ mod tests {
 
     fn task() -> TaskInstance {
         TaskInstance {
+            early_exit: false,
             task_def_id: "task-a".to_string(),
             status: TaskStatus::Pending,
             satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -504,6 +521,7 @@ mod tests {
         instance.tasks.insert(
             "task-a[1]".to_string(),
             TaskInstance {
+                early_exit: false,
                 status: TaskStatus::Running,
                 ..task()
             },
@@ -570,6 +588,7 @@ mod tests {
         instance.tasks.insert(
             "task-a[1]".to_string(),
             TaskInstance {
+                early_exit: false,
                 status: TaskStatus::InputNeeded {
                     input_request: "need input".to_string(),
                 },
@@ -609,6 +628,7 @@ mod tests {
         instance.tasks.insert(
             "task-a[1]".to_string(),
             TaskInstance {
+                early_exit: true,
                 status: TaskStatus::Failed,
                 satisfaction_status: TaskSatisfactionStatus::Unsatisfied,
                 input_data: vec![serde_json::json!({"input": true})],
@@ -641,6 +661,7 @@ mod tests {
         assert_eq!(task.status, TaskStatus::Pending);
         assert_eq!(task.satisfaction_status, TaskSatisfactionStatus::Pending);
         assert_eq!(task.output_data, None);
+        assert!(!task.early_exit);
         assert_eq!(task.verifier_metadata, None);
     }
 
@@ -671,6 +692,7 @@ mod tests {
         instance.tasks.insert(
             "task-a[1]".to_string(),
             TaskInstance {
+                early_exit: false,
                 status: TaskStatus::Failed,
                 satisfaction_status: TaskSatisfactionStatus::Unsatisfied,
                 output_data: Some(serde_json::json!({"stale": true})),
@@ -706,6 +728,7 @@ mod tests {
         instance.tasks.insert(
             "task-a[1]".to_string(),
             TaskInstance {
+                early_exit: false,
                 status: TaskStatus::Failed,
                 satisfaction_status: TaskSatisfactionStatus::Unsatisfied,
                 ..task()
@@ -739,6 +762,7 @@ mod tests {
         instance.tasks.insert(
             "task-a[1]".to_string(),
             TaskInstance {
+                early_exit: false,
                 status: TaskStatus::Failed,
                 ..task()
             },

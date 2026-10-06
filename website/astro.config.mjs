@@ -97,8 +97,8 @@ export default defineConfig({
               slug: 'docs/examples/github-issue-pr-workflow',
             },
             {
-              label: 'FillMyFunnel CloudWatch Review',
-              slug: 'docs/examples/fillmyfunnel-cloudwatch-workflow',
+              label: 'CloudWatch Review',
+              slug: 'docs/examples/cloudwatch-workflow',
             },
             {
               label: 'Daily Stock Report',

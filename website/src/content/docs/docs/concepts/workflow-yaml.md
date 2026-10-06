@@ -54,7 +54,7 @@ tasks:
 | `output_schema` | No | JSON Schema for task output. Verifier tasks must omit this because RelayFold injects the decision schema. |
 | `workspace` | No | Workspace group assignment. |
 | `required_credentials` | Yes | Named credentials required before execution. Use `[]` when none are needed. |
-| `control` | No | Verifier control settings for bounded loops. |
+| `control` | No | Verifier settings for bounded loops. |
 
 Input and output schemas support standard format validation, including `date`,
 `email`, and `uri`.
@@ -140,6 +140,58 @@ control:
 `control.verifier` turns a task into a bounded-loop verifier. The verifier returns `{ "decision": "complete" }` or `{ "decision": "continue", "feedback": "..." }`.
 
 See [Bounded Loops](/relayfold/docs/concepts/bounded-loops/) for the full control-flow behavior.
+
+## Early workflow exit
+
+RelayFold reserves the exact top-level output field `_workflow_exit_reason` for
+successful early completion. No YAML toggle is required; other underscore-prefixed
+fields are ordinary task data.
+
+The task requests exit by returning a top-level `_workflow_exit_reason` string:
+
+```json
+{
+  "_workflow_exit_reason": "All matching patterns are already covered."
+}
+```
+
+A missing or `null` reason continues normal execution. An empty or whitespace-only
+string, or another value type, fails the task and workflow. The unprefixed
+`workflow_exit_reason` is ordinary data and has no control effect.
+Output schema validation runs before the control is evaluated; if your schema
+restricts output fields, include `_workflow_exit_reason` as a string or `null`.
+
+An exit request preserves the triggering task's output and marks remaining
+pending tasks as `Skipped`. Skipped tasks are not dispatched. Already-running tasks
+finish, and the workflow completes once those tasks succeed; `Skipped` counts
+as terminal for completion. If an already-running task fails, the workflow
+becomes `Failed` under normal failure behavior.
+
+The control is independent of task kind. For an external API response that does
+not follow this output contract, use a downstream Function to interpret the
+response and return `_workflow_exit_reason` at the top level.
+There are no JSON Pointer conditions or static YAML reasons.
+
+The triggering attempt records `early_exit: true`, exposed in task status reports
+and task-result metadata. Its preserved output contains the dynamic reason. The
+`task_early_exit_set` event applies this flag to task state. Other attempts default
+to `false`; retries clear the flag. Orchestrator info logs report whether execution continues, exit
+is requested, or validation fails. Exit requests include the reason and pending-task
+count; validation failures include the error.
+Already-running tasks may request human input; the workflow waits for the response
+and allows the continuation to finish while downstream attempts remain skipped.
+
+Tasks within verifier slices can trigger exit. A slice containing skipped attempts
+or an attempt with `early_exit: true` creates no further generations and does not
+require acceptance for workflow completion. A verifier's `continue` result and
+feedback are retained, with that generation unsatisfied.
+
+An independent verifier already running may finish its normal retry loop if its
+slice is uninterrupted, even if its direct consumers are skipped or it is terminal.
+Normal acceptance, exhaustion, and failure rules apply. These retries and human-input
+continuations are exceptions to stopping new work after exit. Pending verifiers
+skipped by the exit do not run. Operator-pause ordering remains undecided; existing
+pause behavior is preserved.
 
 ## Workspaces
 

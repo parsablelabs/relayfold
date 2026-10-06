@@ -373,6 +373,7 @@ fn task_def_with_workspace_group(id: &str, group_name: &str) -> TaskDef {
 
 fn pending_task_instance(task_def_id: &str) -> TaskInstance {
     TaskInstance {
+        early_exit: false,
         task_def_id: task_def_id.to_string(),
         status: TaskStatus::Pending,
         satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -403,6 +404,7 @@ async fn setup_with_pin(
         trigger_input: None,
         pinned_worker_host,
         tasks: HashMap::new(),
+
         verifier_states: HashMap::new(),
     };
     engine
@@ -505,6 +507,7 @@ fn test_workspace_group_does_not_create_scheduling_dependency() {
             ("task-a[1]".to_string(), pending_task_instance("task-a")),
             ("task-b[1]".to_string(), pending_task_instance("task-b")),
         ]),
+
         verifier_states: HashMap::new(),
     };
 
@@ -551,6 +554,7 @@ fn test_root_task_uses_trigger_input_during_initial_materialization() {
         trigger_input: Some(json!({ "repository": "parsablelabs/relayfold" })),
         pinned_worker_host: None,
         tasks: HashMap::new(),
+
         verifier_states: HashMap::new(),
     };
 
@@ -587,6 +591,7 @@ fn test_workspace_group_tasks_still_wait_for_data_binding() {
             ("task-a[1]".to_string(), pending_task_instance("task-a")),
             ("task-b[1]".to_string(), pending_task_instance("task-b")),
         ]),
+
         verifier_states: HashMap::new(),
     };
 
@@ -777,6 +782,7 @@ fn test_loop_execution_metadata_includes_feedback_history() {
         }],
     };
     let task_instance = TaskInstance {
+        early_exit: false,
         task_def_id: "task-a".to_string(),
         status: TaskStatus::Pending,
         satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -798,6 +804,7 @@ fn test_loop_execution_metadata_includes_feedback_history() {
             (
                 "task-a[1]".to_string(),
                 TaskInstance {
+                    early_exit: false,
                     task_def_id: "task-a".to_string(),
                     status: TaskStatus::Completed,
                     satisfaction_status: TaskSatisfactionStatus::Unsatisfied,
@@ -811,6 +818,7 @@ fn test_loop_execution_metadata_includes_feedback_history() {
             ),
             ("task-a[2]".to_string(), task_instance.clone()),
         ]),
+
         verifier_states: HashMap::new(),
     };
     instance.verifier_states.insert(
@@ -861,6 +869,7 @@ fn test_execution_metadata_includes_task_instance_generation_index() {
         data_bindings: vec![],
     };
     let task_instance = TaskInstance {
+        early_exit: false,
         task_def_id: "task-a".to_string(),
         status: TaskStatus::Pending,
         satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -879,6 +888,7 @@ fn test_execution_metadata_includes_task_instance_generation_index() {
         trigger_input: None,
         pinned_worker_host: None,
         tasks: HashMap::from([("task-a[2]".to_string(), task_instance.clone())]),
+
         verifier_states: HashMap::new(),
     };
 
@@ -957,6 +967,7 @@ async fn paused_workflow_records_in_flight_nonfinal_task_and_stops() {
                 trigger_input: None,
                 pinned_worker_host: None,
                 tasks: HashMap::new(),
+
                 verifier_states: HashMap::new(),
             },
         )
@@ -1013,6 +1024,7 @@ async fn paused_workflow_records_in_flight_final_task_and_completes() {
                 trigger_input: None,
                 pinned_worker_host: None,
                 tasks: HashMap::new(),
+
                 verifier_states: HashMap::new(),
             },
         )
@@ -1292,6 +1304,7 @@ async fn test_human_input_continuation_dispatches_same_logical_agent_identity() 
             (
                 "task-a[1]".to_string(),
                 TaskInstance {
+                    early_exit: false,
                     task_def_id: "task-a".to_string(),
                     status: TaskStatus::InputNeeded {
                         input_request: "need clarification".to_string(),
@@ -1308,6 +1321,7 @@ async fn test_human_input_continuation_dispatches_same_logical_agent_identity() 
             (
                 "task-a[2]".to_string(),
                 TaskInstance {
+                    early_exit: false,
                     task_def_id: "task-a".to_string(),
                     status: TaskStatus::Pending,
                     satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -1320,6 +1334,7 @@ async fn test_human_input_continuation_dispatches_same_logical_agent_identity() 
                 },
             ),
         ]),
+
         verifier_states: HashMap::new(),
     };
     engine
@@ -1402,6 +1417,7 @@ fn test_verifier_slice_uses_latest_materialized_completed_source_attempt() {
             (
                 "task-b[1]".to_string(),
                 TaskInstance {
+                    early_exit: false,
                     task_def_id: "task-b".to_string(),
                     status: TaskStatus::InputNeeded {
                         input_request: "need clarification".to_string(),
@@ -1418,6 +1434,7 @@ fn test_verifier_slice_uses_latest_materialized_completed_source_attempt() {
             (
                 "task-b[2]".to_string(),
                 TaskInstance {
+                    early_exit: false,
                     task_def_id: "task-b".to_string(),
                     status: TaskStatus::Completed,
                     satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -1432,6 +1449,7 @@ fn test_verifier_slice_uses_latest_materialized_completed_source_attempt() {
             (
                 "verify[1]".to_string(),
                 TaskInstance {
+                    early_exit: false,
                     task_def_id: "verify".to_string(),
                     status: TaskStatus::Pending,
                     satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -1444,6 +1462,7 @@ fn test_verifier_slice_uses_latest_materialized_completed_source_attempt() {
                 },
             ),
         ]),
+
         verifier_states: HashMap::from([(
             "verify".to_string(),
             VerifierGenerationState {
@@ -1509,6 +1528,7 @@ fn test_verifier_slice_waits_for_latest_materialized_source_attempt() {
             (
                 "task-b[1]".to_string(),
                 TaskInstance {
+                    early_exit: false,
                     task_def_id: "task-b".to_string(),
                     status: TaskStatus::Completed,
                     satisfaction_status: TaskSatisfactionStatus::Unsatisfied,
@@ -1523,6 +1543,7 @@ fn test_verifier_slice_waits_for_latest_materialized_source_attempt() {
             (
                 "task-b[2]".to_string(),
                 TaskInstance {
+                    early_exit: false,
                     task_def_id: "task-b".to_string(),
                     status: TaskStatus::Pending,
                     satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -1537,6 +1558,7 @@ fn test_verifier_slice_waits_for_latest_materialized_source_attempt() {
             (
                 "verify[2]".to_string(),
                 TaskInstance {
+                    early_exit: false,
                     task_def_id: "verify".to_string(),
                     status: TaskStatus::Pending,
                     satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -1549,6 +1571,7 @@ fn test_verifier_slice_waits_for_latest_materialized_source_attempt() {
                 },
             ),
         ]),
+
         verifier_states: HashMap::from([(
             "verify".to_string(),
             VerifierGenerationState {
@@ -1819,6 +1842,7 @@ fn test_exhausted_continue_fails_without_schema_valid_latest_output() {
         tasks: HashMap::from([(
             "verify[1]".to_string(),
             TaskInstance {
+                early_exit: false,
                 task_def_id: "verify".to_string(),
                 status: TaskStatus::Completed,
                 satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -1830,6 +1854,7 @@ fn test_exhausted_continue_fails_without_schema_valid_latest_output() {
                 verifier_metadata: None,
             },
         )]),
+
         verifier_states: HashMap::from([(
             "verify".to_string(),
             VerifierGenerationState {
@@ -2232,4 +2257,455 @@ async fn test_get_workflow_status_unknown_instance() {
         .await
         .unwrap();
     assert!(report.is_none());
+}
+
+struct ExitOutputDispatcher {
+    output: serde_json::Value,
+    calls: StdMutex<Vec<String>>,
+}
+
+#[async_trait]
+impl TaskDispatchPort for ExitOutputDispatcher {
+    async fn dispatch_task(
+        &self,
+        _namespace: &Namespace,
+        _workflow_inst_id: &str,
+        task: &TaskDef,
+        _inputs: &[serde_json::Value],
+        _metadata: &ExecutionMetadata,
+        _dispatch: &TaskDispatchConstraints,
+    ) -> anyhow::Result<ExecutionResult> {
+        self.calls.lock().unwrap().push(task.id.clone());
+        Ok(ExecutionResult::Success(self.output.clone()))
+    }
+}
+
+async fn run_exit_case(
+    output: serde_json::Value,
+    schema: Option<serde_json::Value>,
+) -> (WorkflowInstance, Vec<String>, bool, Vec<(String, bool)>) {
+    let dispatcher = Arc::new(ExitOutputDispatcher {
+        output,
+        calls: StdMutex::new(vec![]),
+    });
+    let engine = make_engine_with_dispatcher(dispatcher.clone());
+    let mut exit = task_def("a-exit", json!({"type": "object"}));
+    exit.output_schema = schema;
+    let id = setup(
+        &engine,
+        WorkflowDef {
+            id: "exit-test".into(),
+            description: String::new(),
+            tasks: vec![
+                exit,
+                task_def("b-independent", json!({"type":"object"})),
+                task_def("c-downstream", json!({"type":"object"})),
+            ],
+            data_bindings: vec![DataBinding {
+                source_task_id: "a-exit".into(),
+                target_task_id: "c-downstream".into(),
+            }],
+        },
+    )
+    .await;
+    let failed = engine
+        .run_workflow_instance(&crate::core::namespace::test_namespace(), id.clone())
+        .await
+        .is_err();
+    let instance = engine
+        .storage
+        .get_workflow_instance(&crate::core::namespace::test_namespace(), &id)
+        .await
+        .unwrap()
+        .unwrap();
+    let records = engine
+        .storage
+        .list_workflow_instance_events(
+            &crate::core::namespace::test_namespace(),
+            &id,
+            WorkflowEventPageRequest {
+                limit: 100,
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap()
+        .items;
+    let exit_events = records
+        .into_iter()
+        .filter_map(|record| match record.event {
+            WorkflowInstanceEvent::TaskEarlyExitSet {
+                task_attempt_id,
+                early_exit,
+            } => Some((task_attempt_id, early_exit)),
+            _ => None,
+        })
+        .collect();
+    let calls = dispatcher.calls.lock().unwrap().clone();
+    (instance, calls, failed, exit_events)
+}
+
+#[tokio::test]
+async fn early_exit_skips_independent_and_downstream_tasks_and_preserves_unschematized_output() {
+    let output =
+        json!({"_workflow_exit_reason":"already processed", "explanation":"already processed"});
+    let (instance, calls, failed, exit_events) = run_exit_case(output.clone(), None).await;
+    assert!(!failed);
+    assert_eq!(calls, vec!["a-exit"]);
+    assert_eq!(instance.status, WorkflowStatus::Completed);
+    assert_eq!(instance.tasks["a-exit[1]"].status, TaskStatus::Completed);
+    assert_eq!(instance.tasks["a-exit[1]"].output_data, Some(output));
+    assert!(instance.tasks["a-exit[1]"].early_exit);
+    for id in ["b-independent[1]", "c-downstream[1]"] {
+        assert_eq!(instance.tasks[id].status, TaskStatus::Skipped);
+        assert!(!instance.tasks[id].early_exit);
+        assert_eq!(
+            instance.tasks[id].satisfaction_status,
+            TaskSatisfactionStatus::Unsatisfied
+        );
+        assert_eq!(instance.tasks[id].output_data, None);
+    }
+    assert_eq!(exit_events, vec![("a-exit[1]".into(), true)]);
+}
+
+#[tokio::test]
+async fn execution_continues_without_reserved_reason() {
+    for output in [
+        json!({}),
+        json!({"_workflow_exit_reason":null}),
+        json!({"workflow_exit_reason":"ordinary application data"}),
+        json!({"workflow_exit_reason":false}),
+    ] {
+        let (instance, calls, failed, exit_events) = run_exit_case(output, None).await;
+        assert!(!failed);
+        assert_eq!(calls, vec!["a-exit", "b-independent", "c-downstream"]);
+        assert_eq!(instance.status, WorkflowStatus::Completed);
+        assert!(exit_events.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn invalid_exit_reason_fails_without_skipping_pending_tasks() {
+    for output in [
+        json!({"_workflow_exit_reason":""}),
+        json!({"_workflow_exit_reason":"  "}),
+        json!({"_workflow_exit_reason":true}),
+    ] {
+        let (instance, calls, failed, exit_events) = run_exit_case(output, None).await;
+        assert!(exit_events.is_empty());
+        assert!(failed);
+        assert_eq!(calls, vec!["a-exit"]);
+        assert_eq!(instance.status, WorkflowStatus::Failed);
+        assert_eq!(instance.tasks["a-exit[1]"].status, TaskStatus::Failed);
+        assert_eq!(
+            instance.tasks["b-independent[1]"].status,
+            TaskStatus::Pending
+        );
+    }
+}
+
+#[tokio::test]
+async fn invalid_output_schema_cannot_request_early_exit() {
+    let (instance, calls, failed, exit_events) = run_exit_case(
+        json!({"_workflow_exit_reason":"already processed"}),
+        Some(json!({"type":"string"})),
+    )
+    .await;
+    assert_eq!(calls, vec!["a-exit"]);
+    assert!(exit_events.is_empty());
+    assert_eq!(
+        instance.tasks["b-independent[1]"].status,
+        TaskStatus::Pending
+    );
+    assert!(failed);
+    assert_eq!(instance.status, WorkflowStatus::Failed);
+}
+
+#[tokio::test]
+async fn early_exit_retains_prior_outputs_and_running_attempts_and_waits_for_them() {
+    let dispatcher = Arc::new(ExitOutputDispatcher {
+        output: json!({"_workflow_exit_reason":"already processed"}),
+        calls: StdMutex::new(vec![]),
+    });
+    let engine = make_engine_with_dispatcher(dispatcher.clone());
+    let exit = task_def("exit", json!({"type":"object"}));
+    let def = WorkflowDef {
+        id: "running-exit".into(),
+        description: String::new(),
+        tasks: vec![
+            exit,
+            task_def("running", json!({"type":"object"})),
+            task_def("prior", json!({"type":"object"})),
+            task_def("pending", json!({"type":"object"})),
+        ],
+        data_bindings: vec![],
+    };
+    let id = setup(&engine, def).await;
+    let manager = WorkflowStateManager::new(engine.storage.clone());
+    manager
+        .commit_events(
+            &crate::core::namespace::test_namespace(),
+            &id,
+            vec![
+                WorkflowInstanceEvent::TaskMaterialized {
+                    task_attempt_id: "exit[1]".into(),
+                    task: pending_task_instance("exit"),
+                },
+                WorkflowInstanceEvent::TaskMaterialized {
+                    task_attempt_id: "pending[1]".into(),
+                    task: pending_task_instance("pending"),
+                },
+                WorkflowInstanceEvent::TaskMaterialized {
+                    task_attempt_id: "running[1]".into(),
+                    task: TaskInstance {
+                        early_exit: false,
+                        status: TaskStatus::Running,
+                        ..pending_task_instance("running")
+                    },
+                },
+                WorkflowInstanceEvent::TaskMaterialized {
+                    task_attempt_id: "prior[1]".into(),
+                    task: TaskInstance {
+                        early_exit: false,
+                        status: TaskStatus::Completed,
+                        output_data: Some(json!({"retained":true})),
+                        satisfaction_status: TaskSatisfactionStatus::Satisfied,
+                        ..pending_task_instance("prior")
+                    },
+                },
+            ],
+        )
+        .await
+        .unwrap();
+    engine
+        .run_workflow_instance(&crate::core::namespace::test_namespace(), id.clone())
+        .await
+        .unwrap();
+    let instance = engine
+        .storage
+        .get_workflow_instance(&crate::core::namespace::test_namespace(), &id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(instance.status, WorkflowStatus::Running);
+    assert_eq!(instance.tasks["pending[1]"].status, TaskStatus::Skipped);
+    assert_eq!(instance.tasks["running[1]"].status, TaskStatus::Running);
+    assert_eq!(
+        instance.tasks["prior[1]"].output_data,
+        Some(json!({"retained":true}))
+    );
+    assert_eq!(*dispatcher.calls.lock().unwrap(), vec!["exit"]);
+    manager
+        .commit_events(
+            &crate::core::namespace::test_namespace(),
+            &id,
+            vec![
+                WorkflowInstanceEvent::TaskStatusChanged {
+                    task_attempt_id: "running[1]".into(),
+                    status: TaskStatus::InputNeeded {
+                        input_request: "confirm report context".into(),
+                    },
+                },
+                WorkflowInstanceEvent::WorkflowStatusChanged {
+                    status: WorkflowStatus::InputNeeded,
+                },
+            ],
+        )
+        .await
+        .unwrap();
+    manager
+        .commit_events(
+            &crate::core::namespace::test_namespace(),
+            &id,
+            vec![WorkflowInstanceEvent::HumanInputSubmitted {
+                task_attempt_id: "running[1]".into(),
+                continuation_task_attempt_id: "running[2]".into(),
+                submitted_input: json!("confirmed"),
+            }],
+        )
+        .await
+        .unwrap();
+    engine
+        .run_workflow_instance(&crate::core::namespace::test_namespace(), id.clone())
+        .await
+        .unwrap();
+    let finished = engine
+        .storage
+        .get_workflow_instance(&crate::core::namespace::test_namespace(), &id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(finished.status, WorkflowStatus::Completed);
+    assert_eq!(finished.tasks["pending[1]"].status, TaskStatus::Skipped);
+    assert_eq!(finished.tasks["running[2]"].status, TaskStatus::Completed);
+    // The continuation also returns the reserved reason and triggers exit.
+    assert!(finished.tasks["running[2]"].early_exit);
+    assert_eq!(*dispatcher.calls.lock().unwrap(), vec!["exit", "running"]);
+}
+
+#[tokio::test]
+async fn skipped_verifier_slices_complete_without_acceptance_or_new_generations() {
+    for initialized_before_exit in [true, false] {
+        let dispatcher = Arc::new(ExitOutputDispatcher {
+            output: json!({"_workflow_exit_reason":"already processed"}),
+            calls: StdMutex::new(vec![]),
+        });
+        let engine = make_engine_with_dispatcher(dispatcher.clone());
+        let exit = task_def("a-exit", json!({"type":"object"}));
+        let mut bindings = vec![DataBinding {
+            source_task_id: "b-work".into(),
+            target_task_id: "c-verify".into(),
+        }];
+        if !initialized_before_exit {
+            bindings.push(DataBinding {
+                source_task_id: "a-exit".into(),
+                target_task_id: "b-work".into(),
+            });
+        }
+        let def = WorkflowDef {
+            id: "skip-loop".into(),
+            description: String::new(),
+            tasks: vec![
+                exit,
+                task_def("b-work", json!({"type":"object"})),
+                agent_verifier_task("c-verify", Some("b-work")),
+            ],
+            data_bindings: bindings,
+        };
+        let id = setup(&engine, def).await;
+        engine
+            .run_workflow_instance(&crate::core::namespace::test_namespace(), id.clone())
+            .await
+            .unwrap();
+        let instance = engine
+            .storage
+            .get_workflow_instance(&crate::core::namespace::test_namespace(), &id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(instance.status, WorkflowStatus::Completed);
+        assert_eq!(instance.tasks["c-verify[1]"].status, TaskStatus::Skipped);
+        assert_eq!(instance.tasks.len(), 3);
+        assert_eq!(
+            instance.verifier_states.contains_key("c-verify"),
+            initialized_before_exit
+        );
+        assert_eq!(*dispatcher.calls.lock().unwrap(), vec!["a-exit"]);
+    }
+}
+
+#[tokio::test]
+async fn verifier_can_trigger_exit_without_retrying_or_exhaustion_failure() {
+    let dispatcher = Arc::new(ExitOutputDispatcher {
+        output: json!({"decision":"continue", "feedback":"retry normally", "_workflow_exit_reason":"report no longer needed"}),
+        calls: StdMutex::new(vec![]),
+    });
+    let engine = make_engine_with_dispatcher(dispatcher.clone());
+    let verifier = agent_verifier_task_with_policy("verify", None, 1, false);
+    let id = setup(
+        &engine,
+        WorkflowDef {
+            id: "verifier-exit".into(),
+            description: String::new(),
+            tasks: vec![verifier],
+            data_bindings: vec![],
+        },
+    )
+    .await;
+    engine
+        .run_workflow_instance(&crate::core::namespace::test_namespace(), id.clone())
+        .await
+        .unwrap();
+    let instance = engine
+        .storage
+        .get_workflow_instance(&crate::core::namespace::test_namespace(), &id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(instance.status, WorkflowStatus::Completed);
+    let attempt = &instance.tasks["verify[1]"];
+    assert!(attempt.early_exit);
+    assert_eq!(attempt.status, TaskStatus::Completed);
+    assert_eq!(
+        attempt.satisfaction_status,
+        TaskSatisfactionStatus::Unsatisfied
+    );
+    assert_eq!(
+        attempt.verifier_metadata.as_ref().unwrap().decision,
+        Some(VerifierDecision::Continue)
+    );
+    assert_eq!(instance.verifier_states["verify"].latest_generation, 1);
+    assert_eq!(*dispatcher.calls.lock().unwrap(), vec!["verify"]);
+}
+
+#[tokio::test]
+async fn independent_verifier_continues_with_skipped_consumer_after_exit() {
+    for has_consumer in [true, false] {
+        let engine = make_engine_with_dispatcher(Arc::new(ContinueThenCompleteDispatcher));
+        let def = WorkflowDef {
+            id: "continue-after-exit".into(),
+            description: String::new(),
+            tasks: vec![
+                task_def("exit", json!({"type":"object"})),
+                agent_verifier_task("verify", None),
+                task_def("consumer", json!({"type":"object"})),
+            ],
+            data_bindings: if has_consumer {
+                vec![DataBinding {
+                    source_task_id: "verify".into(),
+                    target_task_id: "consumer".into(),
+                }]
+            } else {
+                vec![]
+            },
+        };
+        let id = setup(&engine, def).await;
+        let manager = WorkflowStateManager::new(engine.storage.clone());
+        manager
+            .commit_events(
+                &crate::core::namespace::test_namespace(),
+                &id,
+                vec![
+                    WorkflowInstanceEvent::TaskMaterialized {
+                        task_attempt_id: "exit[1]".into(),
+                        task: TaskInstance {
+                            status: TaskStatus::Completed,
+                            early_exit: true,
+                            ..pending_task_instance("exit")
+                        },
+                    },
+                    WorkflowInstanceEvent::TaskMaterialized {
+                        task_attempt_id: "consumer[1]".into(),
+                        task: TaskInstance {
+                            status: TaskStatus::Skipped,
+                            ..pending_task_instance("consumer")
+                        },
+                    },
+                    WorkflowInstanceEvent::TaskMaterialized {
+                        task_attempt_id: "verify[1]".into(),
+                        task: pending_task_instance("verify"),
+                    },
+                ],
+            )
+            .await
+            .unwrap();
+        // Model the retry work permitted to finish an in-flight independent verifier.
+        engine
+            .run_workflow_instance(&crate::core::namespace::test_namespace(), id.clone())
+            .await
+            .unwrap();
+        let instance = engine
+            .storage
+            .get_workflow_instance(&crate::core::namespace::test_namespace(), &id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(instance.status, WorkflowStatus::Completed);
+        assert_eq!(instance.tasks["consumer[1]"].status, TaskStatus::Skipped);
+        assert_eq!(instance.tasks["verify[2]"].status, TaskStatus::Completed);
+        assert_eq!(
+            instance.verifier_states["verify"].status,
+            VerifierStateStatus::Accepted
+        );
+    }
 }

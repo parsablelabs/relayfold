@@ -10,6 +10,8 @@ export function createPublisher({ fetch = globalThis.fetch } = {}) {
       Array.isArray(analysis)
     )
       throw new Error("Missing accepted verifier output or scan");
+    if (scan.groups.length > 1)
+      throw new Error("Publishing requires at most one selected group");
     if (Object.keys(analysis).length === 0)
       return {
         created: [],
@@ -28,8 +30,8 @@ export function createPublisher({ fetch = globalThis.fetch } = {}) {
     )
       throw new Error("Specify repository as GitHub owner/repo");
     const allowed = new Set(scan.groups.map((g) => g.fingerprint));
-    if (analysis.findings.length > 3)
-      throw new Error("At most three issues per run");
+    if (analysis.findings.length > 1)
+      throw new Error("At most one issue per run");
     const used = new Set();
     for (const finding of analysis.findings) {
       if (!allowed.has(finding.fingerprint) || used.has(finding.fingerprint))

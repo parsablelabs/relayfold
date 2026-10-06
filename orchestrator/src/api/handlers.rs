@@ -798,6 +798,7 @@ data_bindings: []
 
     fn failed_task() -> TaskInstance {
         TaskInstance {
+            early_exit: false,
             task_def_id: "taska".to_string(),
             status: TaskStatus::Failed,
             satisfaction_status: TaskSatisfactionStatus::Unsatisfied,
@@ -812,6 +813,7 @@ data_bindings: []
 
     fn input_needed_task() -> TaskInstance {
         TaskInstance {
+            early_exit: false,
             task_def_id: "taska".to_string(),
             status: TaskStatus::InputNeeded {
                 input_request: "need approval".to_string(),
@@ -840,6 +842,7 @@ data_bindings: []
             trigger_input: None,
             pinned_worker_host,
             tasks: HashMap::from([("taska[1]".to_string(), task)]),
+
             verifier_states: HashMap::new(),
         }
     }
@@ -951,6 +954,7 @@ data_bindings: []
                     trigger_input: None,
                     pinned_worker_host: None,
                     tasks: HashMap::new(),
+
                     verifier_states: HashMap::new(),
                 },
             )

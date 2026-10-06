@@ -235,6 +235,7 @@ mod tests {
 
     fn task(status: TaskStatus) -> TaskInstance {
         TaskInstance {
+            early_exit: false,
             task_def_id: "task-a".to_string(),
             satisfaction_status: if status == TaskStatus::Completed {
                 TaskSatisfactionStatus::Satisfied
@@ -262,6 +263,7 @@ mod tests {
             trigger_input: Some(json!({"owner": "namespace-b"})),
             pinned_worker_host: None,
             tasks: HashMap::from([("task-a[1]".to_string(), task(task_status))]),
+
             verifier_states: HashMap::new(),
         }
     }

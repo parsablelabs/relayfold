@@ -33,6 +33,7 @@ pub struct WorkflowStatusReport {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskStatusReport {
+    pub early_exit: bool,
     pub task_attempt_id: String,
     pub task_def_id: String,
     pub status: TaskStatus,

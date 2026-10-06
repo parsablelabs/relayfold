@@ -44,9 +44,18 @@ pub enum TaskTypeDef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TaskControl {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verifier: Option<VerifierControlConfig>,
+}
+
+pub fn workflow_exit_reason(output: &serde_json::Value) -> anyhow::Result<Option<&str>> {
+    match output.get("_workflow_exit_reason") {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(reason)) if !reason.trim().is_empty() => Ok(Some(reason)),
+        _ => anyhow::bail!("_workflow_exit_reason must be null or a nonempty string"),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +86,7 @@ pub enum TaskStatus {
     Running,
     InputNeeded { input_request: String },
     Completed,
+    Skipped,
     Failed,
 }
 
@@ -104,6 +114,9 @@ pub struct TaskInstance {
     /// Whether this attempt is eligible as a satisfied source for downstream data binding.
     #[serde(default)]
     pub satisfaction_status: TaskSatisfactionStatus,
+    /// Whether this attempt triggered successful early workflow exit.
+    #[serde(default)]
+    pub early_exit: bool,
     /// Raw human response that caused this continuation attempt, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub human_input: Option<serde_json::Value>,
@@ -349,5 +362,43 @@ apiCall:
         .unwrap_err();
 
         assert!(error.to_string().contains("unknown field `group`"));
+    }
+    #[test]
+    fn exit_reason_accepts_absence_null_and_nonempty_strings() {
+        for output in [
+            json!({}),
+            json!({"_workflow_exit_reason": null}),
+            json!(false),
+        ] {
+            assert_eq!(workflow_exit_reason(&output).unwrap(), None);
+        }
+        let output = json!({"_workflow_exit_reason": "Already processed"});
+        assert_eq!(
+            workflow_exit_reason(&output).unwrap(),
+            Some("Already processed")
+        );
+    }
+
+    #[test]
+    fn exit_reason_rejects_empty_strings_and_other_types() {
+        for value in [
+            json!(""),
+            json!(" \n\t"),
+            json!(true),
+            json!(1),
+            json!([]),
+            json!({}),
+        ] {
+            assert!(workflow_exit_reason(&json!({"_workflow_exit_reason": value})).is_err());
+        }
+    }
+
+    #[test]
+    fn task_control_rejects_obsolete_exit_configuration() {
+        assert!(serde_json::from_value::<TaskControl>(json!({"allow_early_exit": true})).is_err());
+        assert!(
+            serde_json::from_value::<TaskControl>(json!({"exit_workflow": {"when": "/no_work"}}))
+                .is_err()
+        );
     }
 }

@@ -54,6 +54,10 @@ npm test
 
 Commands in this section run from the `worker/` directory.
 
+The HTTP tests start local servers on `127.0.0.1` using ephemeral ports. Run
+them in an environment that permits loopback listeners; a sandbox that blocks
+them will report `listen EPERM`.
+
 ## Runtime behavior
 
 By default, the worker connects to the orchestrator worker API at

@@ -638,6 +638,7 @@ fn task_result_for_instance(
     include_metadata: bool,
 ) -> TaskResult {
     let metadata = include_metadata.then(|| TaskResultMetadata {
+        early_exit: task.early_exit,
         task_def_id: task.task_def_id.clone(),
         task_attempt_id: task_attempt_id.to_string(),
         satisfaction: task.satisfaction_status.clone(),
@@ -655,6 +656,10 @@ fn task_result_for_instance(
         TaskStatus::Failed => TaskResult::Failure {
             input: task.input_data.clone(),
             error_message: "task failed".to_string(),
+            metadata,
+        },
+        TaskStatus::Skipped => TaskResult::Skipped {
+            input: task.input_data.clone(),
             metadata,
         },
         TaskStatus::Pending => TaskResult::Pending {
@@ -831,6 +836,7 @@ fn validate_and_normalize_workflow_def(mut def: WorkflowDef) -> anyhow::Result<W
                 task.id
             );
         }
+
         if let Some(verifier) = task
             .control
             .as_mut()
@@ -1671,6 +1677,7 @@ mod tests {
                     tasks: HashMap::from([(
                         "taska[1]".to_string(),
                         TaskInstance {
+                            early_exit: false,
                             task_def_id: "taska".to_string(),
                             status: TaskStatus::InputNeeded {
                                 input_request: "Which release channel?".to_string(),
@@ -1751,6 +1758,7 @@ mod tests {
             tasks: HashMap::from([(
                 "taska[1]".to_string(),
                 TaskInstance {
+                    early_exit: false,
                     task_def_id: "taska".to_string(),
                     status: TaskStatus::InputNeeded {
                         input_request: "need input".to_string(),
@@ -1885,6 +1893,7 @@ mod tests {
                 (
                     "taska[1]".to_string(),
                     TaskInstance {
+                        early_exit: false,
                         task_def_id: "taska".to_string(),
                         status: TaskStatus::Failed,
                         satisfaction_status: TaskSatisfactionStatus::Unsatisfied,
@@ -1899,6 +1908,7 @@ mod tests {
                 (
                     "taskb[1]".to_string(),
                     TaskInstance {
+                        early_exit: false,
                         task_def_id: "taskb".to_string(),
                         status: TaskStatus::Completed,
                         satisfaction_status: TaskSatisfactionStatus::Satisfied,
@@ -2025,6 +2035,7 @@ mod tests {
                     tasks: HashMap::from([(
                         "taska[1]".to_string(),
                         TaskInstance {
+                            early_exit: false,
                             task_def_id: "taska".to_string(),
                             status: TaskStatus::Failed,
                             satisfaction_status: TaskSatisfactionStatus::Unsatisfied,
@@ -2109,6 +2120,7 @@ mod tests {
                     tasks: HashMap::from([(
                         "taska[1]".to_string(),
                         TaskInstance {
+                            early_exit: false,
                             task_def_id: "taska".to_string(),
                             status: TaskStatus::Failed,
                             satisfaction_status: TaskSatisfactionStatus::Unsatisfied,

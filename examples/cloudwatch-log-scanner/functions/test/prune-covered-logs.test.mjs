@@ -32,7 +32,11 @@ test("prunes exact issue markers, preserving remaining evidence and scan metadat
     [issues, scan],
   ]) {
     const result = prune({ inputs });
-    assert.deepEqual(result, { ...scan, groups: [scan.groups[1]] });
+    assert.deepEqual(result, {
+      ...scan,
+      groups: [scan.groups[1]],
+      _workflow_exit_reason: null,
+    });
     assert.equal(scan.groups.length, 2);
   }
 });
@@ -46,7 +50,10 @@ test("retains unmatched groups, including text without a valid current marker", 
     [{ body: marker(first.slice(1)) }],
     [{ body: marker("c".repeat(64)) }],
   ])
-    assert.deepEqual(prune({ inputs: [scan, fetched(issues)] }), scan);
+    assert.deepEqual(prune({ inputs: [scan, fetched(issues)] }), {
+      ...scan,
+      _workflow_exit_reason: null,
+    });
 });
 
 test("all covered or empty scans produce no-work input for publishing", async () => {
@@ -61,12 +68,37 @@ test("all covered or empty scans produce no-work input for publishing", async ()
       ],
     });
     assert.deepEqual(result.groups, []);
+    assert.equal(
+      result._workflow_exit_reason,
+      "No uncovered log patterns remain.",
+    );
     const published = await publish({
       inputs: [result, { decision: "complete", output: {} }],
     });
     assert.deepEqual(published.created, []);
     assert.match(published.summary, /No work to do/);
   }
+});
+
+test("recomputes exit reason from remaining groups instead of trusting the upstream reason", () => {
+  assert.equal(
+    prune({
+      inputs: [
+        { ...scan, _workflow_exit_reason: "Upstream exit reason" },
+        fetched([]),
+      ],
+    })._workflow_exit_reason,
+    null,
+  );
+  assert.equal(
+    prune({
+      inputs: [
+        { ...scan, _workflow_exit_reason: null },
+        fetched([{ body: `${marker(first)}\n${marker(second)}` }]),
+      ],
+    })._workflow_exit_reason,
+    "No uncovered log patterns remain.",
+  );
 });
 
 test("fails on missing inputs or a mismatched repository", () => {
@@ -96,6 +128,6 @@ test("generated pruning artifact runs without dependencies", async () => {
   );
   assert.deepEqual(
     module.default({ inputs: [scan, fetched([{ body: marker(first) }])] }),
-    { ...scan, groups: [scan.groups[1]] },
+    { ...scan, groups: [scan.groups[1]], _workflow_exit_reason: null },
   );
 });

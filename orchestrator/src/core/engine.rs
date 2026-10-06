@@ -74,6 +74,7 @@ impl WorkflowEngine {
             .tasks
             .iter()
             .map(|(task_attempt_id, t)| TaskStatusReport {
+                early_exit: t.early_exit,
                 task_attempt_id: task_attempt_id.clone(),
                 task_def_id: t.task_def_id.clone(),
                 status: t.status.clone(),
@@ -166,6 +167,7 @@ impl WorkflowEngine {
                 events.push(WorkflowInstanceEvent::TaskMaterialized {
                     task_attempt_id,
                     task: TaskInstance {
+                        early_exit: false,
                         task_def_id: task_def.id.clone(),
                         status: TaskStatus::Pending,
                         satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -190,7 +192,7 @@ impl WorkflowEngine {
         while progress_made {
             progress_made = false;
 
-            let generation_events = self.materialize_eligible_generation_events(
+            let generation_events = self.materialize_eligible_initial_generation_events(
                 &workflow_instance,
                 &workflow_def,
                 &loop_slices,
@@ -230,6 +232,11 @@ impl WorkflowEngine {
             tasks_to_run.sort();
 
             for task_attempt_id in tasks_to_run {
+                // Earlier results in this pass may have skipped this runnable attempt.
+                // TODO: consider other implementation options, e.g. prunning tasks_to_run?
+                if workflow_instance.tasks[&task_attempt_id].status != TaskStatus::Pending {
+                    continue;
+                }
                 // A pause may have been committed while this engine pass was
                 // resolving runnable work. Stop cleanly instead of turning the
                 // next task attempt Running and relying on a version conflict.
@@ -430,13 +437,96 @@ impl WorkflowEngine {
                                     satisfaction_status: TaskSatisfactionStatus::Satisfied,
                                 });
                             }
-                            // Only record output when a schema is declared.
-                            if output_schema.is_some() {
+                            // Preserve exit output even when no output schema is declared.
+                            if output_schema.is_some()
+                                || output.get("_workflow_exit_reason").is_some()
+                            {
                                 events.push(WorkflowInstanceEvent::TaskOutputRecorded {
                                     task_attempt_id: task_attempt_id.clone(),
                                     output_data: Some(output.clone()),
                                 });
                             }
+
+                            match crate::core::task::workflow_exit_reason(&output) {
+                                Ok(Some(reason)) => {
+                                    events.push(WorkflowInstanceEvent::TaskEarlyExitSet {
+                                        task_attempt_id: task_attempt_id.clone(),
+                                        early_exit: true,
+                                    });
+
+                                    let mut pending_ids: Vec<_> = workflow_instance
+                                        .tasks
+                                        .iter()
+                                        .filter(|(_, task)| task.status == TaskStatus::Pending)
+                                        .map(|(id, _)| id.clone())
+                                        .collect();
+
+                                    // sorting IDs to keep even order deterministic when persisted
+                                    pending_ids.sort();
+
+                                    tracing::info!(
+                                        workflow_instance_id = %workflow_inst_id,
+                                        task_attempt_id = %task_attempt_id,
+                                        pending_task_count = pending_ids.len(),
+                                        reason = %reason,
+                                        "Task provided an exit reason; requesting successful workflow exit"
+                                    );
+
+                                    for id in pending_ids {
+                                        events.push(WorkflowInstanceEvent::TaskStatusChanged {
+                                            task_attempt_id: id.clone(),
+                                            status: TaskStatus::Skipped,
+                                        });
+                                        events.push(
+                                            WorkflowInstanceEvent::TaskSatisfactionChanged {
+                                                task_attempt_id: id,
+                                                satisfaction_status:
+                                                    TaskSatisfactionStatus::Unsatisfied,
+                                            },
+                                        );
+                                    }
+                                }
+                                Ok(None) => {
+                                    tracing::info!(
+                                        workflow_instance_id = %workflow_inst_id,
+                                        task_attempt_id = %task_attempt_id,
+                                        "Task provided no exit reason; continuing workflow execution"
+                                    );
+                                }
+                                Err(error) => {
+                                    tracing::info!(
+                                        workflow_instance_id = %workflow_inst_id,
+                                        task_attempt_id = %task_attempt_id,
+                                        error = %error,
+                                        "Early-exit control validation failed; failing task and workflow"
+                                    );
+
+                                    events.extend([
+                                        WorkflowInstanceEvent::TaskStatusChanged {
+                                            task_attempt_id: task_attempt_id.clone(),
+                                            status: TaskStatus::Failed,
+                                        },
+                                        WorkflowInstanceEvent::TaskSatisfactionChanged {
+                                            task_attempt_id: task_attempt_id.clone(),
+                                            satisfaction_status:
+                                                TaskSatisfactionStatus::Unsatisfied,
+                                        },
+                                        WorkflowInstanceEvent::WorkflowStatusChanged {
+                                            status: WorkflowStatus::Failed,
+                                        },
+                                    ]);
+                                    self.commit_task_result_events_preserving_pause(
+                                        namespace,
+                                        &state_manager,
+                                        &workflow_inst_id,
+                                        workflow_instance,
+                                        events,
+                                    )
+                                    .await?;
+                                    return Err(error);
+                                }
+                            }
+
                             if task_verifier(task_def).is_some() {
                                 let verifier_result = match verifier_result_from_output(&output) {
                                     Ok(verifier_result) => verifier_result,
@@ -476,15 +566,25 @@ impl WorkflowEngine {
                                         return Err(error);
                                     }
                                 };
+
+                                // Include this result's exit flag and skips when deciding retries.
+                                let result_instance =
+                                    crate::core::workflow::events::reduce_workflow_instance_events(
+                                        Some(workflow_instance.clone()),
+                                        &events,
+                                    )?;
+
                                 let verifier_transition = self.verifier_result_transition(
-                                    &workflow_instance,
+                                    &result_instance,
                                     &workflow_def,
                                     &loop_slices,
                                     &task_attempt_id,
                                     &output,
                                     verifier_result,
                                 )?;
+
                                 events.extend(verifier_transition.events);
+
                                 workflow_instance = self
                                     .commit_task_result_events_preserving_pause(
                                         namespace,
@@ -676,15 +776,28 @@ impl WorkflowEngine {
         workflow_instance: &WorkflowInstance,
         workflow_def: &WorkflowDef,
     ) -> bool {
+        let loop_slices = self.compute_loop_slices(workflow_def);
         workflow_def.tasks.iter().all(|task_def| {
             self.latest_materialized_attempt_id(workflow_instance, &task_def.id)
-                .and_then(|task_attempt_id| workflow_instance.tasks.get(&task_attempt_id))
-                .is_some_and(|task| task.status == TaskStatus::Completed)
-        }) && workflow_instance.verifier_states.values().all(|state| {
+                .and_then(|id| workflow_instance.tasks.get(&id))
+                .is_some_and(|task| {
+                    matches!(task.status, TaskStatus::Completed | TaskStatus::Skipped)
+                })
+        }) && workflow_instance.verifier_states.iter().all(|(id, state)| {
             matches!(
                 state.status,
                 VerifierStateStatus::Accepted | VerifierStateStatus::ExhaustedAccepted
-            )
+            ) || (state.status == VerifierStateStatus::Running
+                && loop_slices
+                    .get(id)
+                    .is_some_and(|slice| self.slice_interrupted_by_exit(workflow_instance, slice)))
+        })
+    }
+
+    fn slice_interrupted_by_exit(&self, instance: &WorkflowInstance, slice: &[String]) -> bool {
+        instance.tasks.values().any(|task| {
+            slice.contains(&task.task_def_id)
+                && (task.status == TaskStatus::Skipped || task.early_exit)
         })
     }
 
@@ -748,7 +861,7 @@ impl WorkflowEngine {
         seen
     }
 
-    fn materialize_eligible_generation_events(
+    fn materialize_eligible_initial_generation_events(
         &self,
         instance: &WorkflowInstance,
         def: &WorkflowDef,
@@ -759,18 +872,22 @@ impl WorkflowEngine {
         let mut planned_task_attempts = HashSet::new();
 
         for (verifier_task_id, slice) in loop_slices {
-            if instance.verifier_states.contains_key(verifier_task_id)
+            if self.slice_interrupted_by_exit(instance, slice)
+                || instance.verifier_states.contains_key(verifier_task_id)
                 || planned_verifier_states.contains(verifier_task_id)
             {
                 continue;
             }
+
             let Some(verifier_task) = def.tasks.iter().find(|task| task.id == *verifier_task_id)
             else {
                 continue;
             };
+
             let Some(verifier) = task_verifier(verifier_task) else {
                 continue;
             };
+
             let Some(start_task) = def
                 .tasks
                 .iter()
@@ -840,6 +957,9 @@ impl WorkflowEngine {
         generation_index: u32,
         planned_task_attempts: &mut HashSet<String>,
     ) -> Vec<WorkflowInstanceEvent> {
+        if self.slice_interrupted_by_exit(workflow_instance, slice) {
+            return vec![];
+        }
         let mut events = Vec::new();
         for task_def_id in slice {
             let task_attempt_id = TaskInstance::make_task_attempt_id(task_def_id, generation_index);
@@ -853,6 +973,7 @@ impl WorkflowEngine {
             events.push(WorkflowInstanceEvent::TaskMaterialized {
                 task_attempt_id,
                 task: TaskInstance {
+                    early_exit: false,
                     task_def_id: task_def_id.clone(),
                     status: TaskStatus::Pending,
                     satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -1195,6 +1316,29 @@ impl WorkflowEngine {
                         verifier_output: verifier_result.output.clone(),
                     },
                 });
+
+                if self.slice_interrupted_by_exit(instance, &slice) {
+                    events.push(WorkflowInstanceEvent::TaskVerifierMetadataSet {
+                        task_attempt_id: verifier_task_attempt_id.to_string(),
+                        verifier_metadata: Some(VerifierAttemptMetadata {
+                            status: VerifierAttemptStatus::Rejected,
+                            decision: Some(VerifierDecision::Continue),
+                            feedback: Some(feedback),
+                            verifier_output: Some(verifier_result.output),
+                            exit_reason: Some("slice_interrupted_by_early_exit".to_string()),
+                        }),
+                    });
+                    events.extend(self.slice_satisfaction_events(
+                        instance,
+                        &slice,
+                        generation,
+                        TaskSatisfactionStatus::Unsatisfied,
+                    ));
+                    return Ok(VerifierTransition {
+                        events,
+                        error_message: None,
+                    });
+                }
 
                 if generation < verifier.max_iterations {
                     let mut updated_state = state.clone();

@@ -29,6 +29,11 @@
         "dependencies": []
       },
       {
+        "id": "cloudwatch-log-scanner.prepare_selected_group",
+        "source": "src/prepare-selected-group.mjs",
+        "dependencies": []
+      },
+      {
         "id": "cloudwatch-log-scanner.publish_issues",
         "source": "src/publish-issues.mjs",
         "dependencies": []

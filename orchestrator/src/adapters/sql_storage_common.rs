@@ -41,6 +41,7 @@ pub(super) fn task_status_name(status: &TaskStatus) -> &'static str {
         TaskStatus::Running => "running",
         TaskStatus::InputNeeded { .. } => "input_needed",
         TaskStatus::Completed => "completed",
+        TaskStatus::Skipped => "skipped",
         TaskStatus::Failed => "failed",
     }
 }

@@ -123,6 +123,10 @@ pub enum TaskResult {
         error_message: String,
         metadata: Option<TaskResultMetadata>,
     },
+    Skipped {
+        input: Vec<serde_json::Value>,
+        metadata: Option<TaskResultMetadata>,
+    },
     Pending {
         input: Vec<serde_json::Value>,
         metadata: Option<TaskResultMetadata>,
@@ -146,6 +150,7 @@ pub struct WorkflowTaskResult {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskResultMetadata {
+    pub early_exit: bool,
     pub task_def_id: String,
     pub task_attempt_id: String,
     pub satisfaction: TaskSatisfactionStatus,
@@ -161,6 +166,7 @@ fn serialize_metadata<S>(
 where
     S: SerializeMap,
 {
+    map.serialize_entry("early_exit", &metadata.early_exit)?;
     map.serialize_entry("task_def_id", &metadata.task_def_id)?;
     map.serialize_entry("task_attempt_id", &metadata.task_attempt_id)?;
     map.serialize_entry("satisfaction", &metadata.satisfaction)?;
@@ -174,6 +180,7 @@ where
     Ok(())
 }
 
+// TODO: consider moving this into API layer
 impl Serialize for TaskResult {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -203,6 +210,15 @@ impl Serialize for TaskResult {
                 map.serialize_entry("status", "failure")?;
                 map.serialize_entry("input", input)?;
                 map.serialize_entry("error_message", error_message)?;
+                if let Some(metadata) = metadata {
+                    serialize_metadata(&mut map, metadata)?;
+                }
+                map.end()
+            }
+            TaskResult::Skipped { input, metadata } => {
+                let mut map = serializer.serialize_map(None)?;
+                map.serialize_entry("status", "skipped")?;
+                map.serialize_entry("input", input)?;
                 if let Some(metadata) = metadata {
                     serialize_metadata(&mut map, metadata)?;
                 }

@@ -516,7 +516,30 @@ Get a specific generation:
 curl -sS "$RELAYFOLD_URL/workflows/hello-workflow-1780000000000000000/tasks/hello/1"
 ```
 
-Task result statuses include `success`, `failure`, `pending`, `running`, and `input_needed`. Success results include `output`; failure results include `error_message`; input-needed results include `input_request`.
+Task status reports and task-result metadata include `early_exit`. It is `true`
+on the completed attempt that triggered early exit and `false` on other attempts,
+including those skipped as a result. The saved task output contains
+`_workflow_exit_reason`, which explains why it exited.
+
+The state-changing `task_early_exit_set` event records the flag:
+
+```json
+{
+  "type": "task_early_exit_set",
+  "task_attempt_id": "prune-covered-logs[1]",
+  "early_exit": true
+}
+```
+
+Workflow status remains `Completed` on successful completion; no separate workflow
+exit flag is stored. New attempts default to `early_exit: false`, and retries clear
+it on the retried attempt.
+
+The triggering task output is retained. Task status reports use `Skipped` for
+unexecuted attempts; workflow list `completed_task_count` counts only executed,
+completed attempts.
+
+Task result statuses include `success`, `failure`, `pending`, `running`, `skipped`, and `input_needed`. A `skipped` result means the attempt was not executed after a successful early-exit request; it has no output and does not count as a successful execution. Success results include `output`; failure results include `error_message`; input-needed results include `input_request`.
 
 ## Human input
 

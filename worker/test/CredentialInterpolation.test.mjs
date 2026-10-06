@@ -125,12 +125,19 @@ test('confirmation that secrets are absent from logs and error results', async (
 
 async function withServer(handler, run) {
     const server = http.createServer(handler);
-    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', resolve);
+    });
     const address = server.address();
+    assert(address && typeof address === 'object');
     const url = `http://127.0.0.1:${address.port}`;
     try {
         return await run(url);
     } finally {
-        server.close();
+        server.closeAllConnections();
+        await new Promise((resolve, reject) => {
+            server.close((error) => error ? reject(error) : resolve());
+        });
     }
 }

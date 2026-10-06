@@ -7,6 +7,8 @@ import {
 } from '../dist/core/TaskEnvironment.js';
 
 test('provider credentials are available for the complete wrapped Agent execution scope', async () => {
+    const previousGhToken = process.env.GH_TOKEN;
+    const previousOpenAiKey = process.env.OPENAI_API_KEY;
     const env = await resolveCredentialEnvironment(
         payload(['gh_token', 'openai_api_key']),
         credentials({
@@ -29,8 +31,8 @@ test('provider credentials are available for the complete wrapped Agent executio
         );
     });
 
-    assert.equal(process.env.GH_TOKEN, undefined);
-    assert.equal(process.env.OPENAI_API_KEY, undefined);
+    assert.ok(process.env.GH_TOKEN === previousGhToken, 'GH_TOKEN should be restored');
+    assert.ok(process.env.OPENAI_API_KEY === previousOpenAiKey, 'OPENAI_API_KEY should be restored');
 });
 
 test('Pi resolves provider-standard Gemini and Anthropic environment variables', async () => {

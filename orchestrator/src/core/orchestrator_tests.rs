@@ -195,6 +195,7 @@ fn workflow_instance(id: &str, workflow_def_id: &str) -> WorkflowInstance {
         trigger_input: None,
         pinned_worker_host: None,
         tasks: HashMap::new(),
+
         verifier_states: HashMap::new(),
     }
 }
@@ -1355,6 +1356,7 @@ async fn startup_recovery_cross_namespace_child() {
         instance.tasks.insert(
             task_attempt_id.clone(),
             TaskInstance {
+                early_exit: false,
                 task_def_id: "taska".to_string(),
                 status: TaskStatus::Running,
                 satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -1506,6 +1508,7 @@ async fn startup_recovery_requeues_abandoned_running_task_attempts() {
     instance.tasks.insert(
         task_attempt_id.clone(),
         TaskInstance {
+            early_exit: false,
             task_def_id: "taska".to_string(),
             status: TaskStatus::Running,
             satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -1773,6 +1776,7 @@ async fn retry_workflow_task_commits_retry_and_enqueues_workflow() {
     instance.tasks.insert(
         "taska[1]".to_string(),
         TaskInstance {
+            early_exit: false,
             task_def_id: "taska".to_string(),
             status: TaskStatus::Failed,
             satisfaction_status: TaskSatisfactionStatus::Unsatisfied,
@@ -1848,6 +1852,7 @@ async fn force_retry_workflow_task_keeps_existing_host_when_it_is_available() {
     instance.tasks.insert(
         "taska[1]".to_string(),
         TaskInstance {
+            early_exit: false,
             task_def_id: "taska".to_string(),
             status: TaskStatus::Failed,
             satisfaction_status: TaskSatisfactionStatus::Unsatisfied,
@@ -1908,6 +1913,7 @@ async fn force_retry_workflow_task_reassigns_when_existing_host_is_unavailable()
     instance.tasks.insert(
         "taska[1]".to_string(),
         TaskInstance {
+            early_exit: false,
             task_def_id: "taska".to_string(),
             status: TaskStatus::Failed,
             satisfaction_status: TaskSatisfactionStatus::Unsatisfied,
@@ -1969,6 +1975,7 @@ async fn force_retry_workflow_task_rejects_when_no_host_is_eligible() {
     instance.tasks.insert(
         "taska[1]".to_string(),
         TaskInstance {
+            early_exit: false,
             task_def_id: "taska".to_string(),
             status: TaskStatus::Failed,
             satisfaction_status: TaskSatisfactionStatus::Unsatisfied,

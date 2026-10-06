@@ -224,7 +224,7 @@ impl StoragePort for MySqlStorage {
 
         let task_rows = sqlx::query(
             "SELECT task_attempt_id, task_def_id, status_json, satisfaction_status, generation_index,
-                    human_input_json, input_data_json, input_mapping_json, output_data_json,
+                    human_input_json, early_exit, input_data_json, input_mapping_json, output_data_json,
                     verifier_metadata_json
              FROM workflow_tasks
              WHERE namespace = ? AND workflow_instance_id = ?",
@@ -237,6 +237,7 @@ impl StoragePort for MySqlStorage {
         for row in task_rows {
             let task_attempt_id = row.get::<String, _>("task_attempt_id");
             let task = TaskInstance {
+                early_exit: row.get("early_exit"),
                 task_def_id: row.get("task_def_id"),
                 status: deserialize_json(&row.get::<String, _>("status_json"))?,
                 satisfaction_status: deserialize_json(
@@ -631,6 +632,7 @@ async fn upsert_workflow_instance(
             version = new.version,
             status = new.status,
             trigger_input_json = new.trigger_input_json,
+
             pinned_worker_host_id = new.pinned_worker_host_id,
             modified_at_epoch_ms = new.modified_at_epoch_ms,
             completed_at_epoch_ms = new.completed_at_epoch_ms",
@@ -690,10 +692,10 @@ async fn upsert_task(
     sqlx::query(
         "INSERT INTO workflow_tasks (
                 namespace, workflow_instance_id, task_attempt_id, task_def_id, status, status_json,
-                satisfaction_status, generation_index, human_input_json, input_data_json,
+                satisfaction_status, generation_index, human_input_json, early_exit, input_data_json,
                 input_mapping_json, output_data_json, verifier_metadata_json
              )
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) AS new
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) AS new
              ON DUPLICATE KEY UPDATE
                 task_def_id = new.task_def_id,
                 status = new.status,
@@ -701,6 +703,7 @@ async fn upsert_task(
                 satisfaction_status = new.satisfaction_status,
                 generation_index = new.generation_index,
                 human_input_json = new.human_input_json,
+                early_exit = new.early_exit,
                 input_data_json = new.input_data_json,
                 input_mapping_json = new.input_mapping_json,
                 output_data_json = new.output_data_json,
@@ -715,6 +718,7 @@ async fn upsert_task(
     .bind(serde_json::to_string(&task.satisfaction_status)?)
     .bind(i64::from(task.generation_index))
     .bind(optional_json_string(&task.human_input)?)
+    .bind(task.early_exit)
     .bind(serde_json::to_string(&task.input_data)?)
     .bind(serde_json::to_string(&task.input_mapping)?)
     .bind(optional_json_string(&task.output_data)?)

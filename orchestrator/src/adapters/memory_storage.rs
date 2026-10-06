@@ -363,6 +363,7 @@ mod tests {
             trigger_input: None,
             pinned_worker_host: None,
             tasks: HashMap::new(),
+
             verifier_states: HashMap::new(),
         }
     }
@@ -406,6 +407,7 @@ mod tests {
 
     fn task(output: &str) -> TaskInstance {
         TaskInstance {
+            early_exit: false,
             task_def_id: "shared-task".to_string(),
             status: TaskStatus::Completed,
             satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -552,6 +554,7 @@ mod tests {
         instance.tasks.insert(
             "task-a[1]".to_string(),
             TaskInstance {
+                early_exit: false,
                 task_def_id: "task-a".to_string(),
                 status: TaskStatus::Completed,
                 satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -566,6 +569,7 @@ mod tests {
         instance.tasks.insert(
             "task-b[1]".to_string(),
             TaskInstance {
+                early_exit: false,
                 task_def_id: "task-b".to_string(),
                 status: TaskStatus::Pending,
                 satisfaction_status: TaskSatisfactionStatus::Pending,
@@ -960,6 +964,7 @@ mod tests {
         instance.tasks.insert(
             "task-a[1]".to_string(),
             TaskInstance {
+                early_exit: false,
                 task_def_id: "task-a".to_string(),
                 status: TaskStatus::Completed,
                 satisfaction_status: TaskSatisfactionStatus::Pending,

@@ -7,6 +7,7 @@ The workflow references these registry IDs:
 | ------------------------------ | ------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------ |
 | `cloudwatch-log-scanner.scan_cloudwatch` | `src/scan-cloudwatch.mjs` | `aws_access_key_id`, `aws_secret_access_key`, optionally `aws_session_token` | `@aws-sdk/client-cloudwatch-logs@3.1146.0` |
 | `cloudwatch-log-scanner.prune_covered_logs` | `src/prune-covered-logs.mjs` | None | None |
+| `cloudwatch-log-scanner.prepare_selected_group` | `src/prepare-selected-group.mjs` | None | None |
 | `cloudwatch-log-scanner.fetch_issues` | `src/fetch-issues.mjs` | `gh_token` | None |
 | `cloudwatch-log-scanner.publish_issues`  | `src/publish-issues.mjs`  | `gh_token`                                                                   | None                                       |
 
@@ -31,7 +32,7 @@ a localhost CloudWatch protocol server, verifying it returns warning/error data
 through the SDK's signed request and paginated response path. Allow localhost
 socket binding when running these tests in a sandbox.
 
-No automated test contacts AWS or GitHub. All four generated Function entry points
+No automated test contacts AWS or GitHub. All five generated Function entry points
 are exercised. The runtime exports default functions with RelayFold's normal
 `{ inputs, credentials, workspacePath }` context. The named `createScanner` and
 `createPublisher`, and `createIssueFetcher` factories expose side effects for tests; workflows use the
@@ -74,6 +75,8 @@ curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.prune_covered_logs.json
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
+  --data-binary @dist/cloudwatch-log-scanner.prepare_selected_group.json
+curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.publish_issues.json
 ```
 
@@ -110,7 +113,9 @@ When a limit prevents further scanning, the function returns collected data with
 `reason` (`page_limit`, `event_limit`, or `pattern_limit`). Page limits move on to
 the next target; event and pattern limits stop the scan globally. Counts cover
 retained events only. Complete scans return `truncated: false` and an empty list.
-AWS errors and repeated pagination tokens still fail the task.
+AWS errors and repeated pagination tokens still fail the task. The output includes
+`_workflow_exit_reason: "No matching log patterns were found."` when no groups were collected, otherwise `null`. This describes
+retained patterns; truncation metadata still indicates incomplete scan coverage.
 
 Samples preserve original values and formatting, apart from the size cap.
 Masking and sanitization must happen upstream. IDs, numbers, and whitespace are
@@ -118,17 +123,22 @@ normalized only in the internal grouping signature; samples are not normalized.
 
 `fetch_issues` reads `inputs[0].repository` and returns `{ repository, issues }`. It fetches every page of open GitHub issues labeled `relayfold`, excludes pull requests, and returns only `number`, `title`, `body`, and `html_url` per issue. GitHub failures or pagination-limit exhaustion fail the task rather than returning an incomplete list. It runs independently of scanning; analysis and verification receive both results. Their semantic duplicate checks cover this open labeled list; the publisher retains its final fingerprint check across open and closed issues. Published issues receive the `relayfold` label.
 
-`prune_covered_logs` receives the scan and fetched open issues in either order, requires matching repositories, and removes groups whose fingerprints appear in exact current issue markers. It preserves all other scan metadata, including `total_events` (the count before pruning), samples for remaining groups, and truncation information. It has no credentials, network calls, or persistent cache. Only open issues labeled `relayfold` from `fetch_issues` participate; unmarked and closed issues do not suppress patterns at this stage.
+`prune_covered_logs` receives the scan and fetched open issues in either order, requires matching repositories, and removes groups whose fingerprints appear in exact current issue markers. It recomputes `_workflow_exit_reason`, returning "No uncovered log patterns remain." when the remaining groups are empty and `null` otherwise. It preserves all other scan metadata, including `total_events` (the count before pruning), samples for remaining groups, and truncation information. It has no credentials, network calls, or persistent cache. Only open issues labeled `relayfold` from `fetch_issues` participate; unmarked and closed issues do not suppress patterns at this stage.
 
-Analysis, verification, and publishing receive this pruned scan. If every pattern is covered, both Agents return their no-work outputs without inspecting the repository. They still make LLM calls; pruning reduces input and inspection work rather than bypassing Agent execution.
+Both `scan-cloudwatch` and `prune-covered-logs` return the reserved top-level
+`_workflow_exit_reason` field. No YAML toggle is needed. An empty scan or
+fully covered scan completes successfully, skips pending analysis, verification,
+publishing, and labeling tasks, and preserves the triggering output. Independent
+issue fetching may already have run. When patterns remain, `select-group` ranks them by actual severity and likely user impact, using recurrence and recency as tie-breakers. It returns one exact `fingerprint` and a `reason`, without tools or repository inspection. `prepare-selected-group` receives that selection and the pruned scan, rejects unknown fingerprints, and passes only the selected original group to analysis, verification, and publishing. All scan metadata is preserved; `total_events` still counts the original scan. The selection reason remains available in the selector task output. Selection requires a non-null fingerprint identifying an existing group; empty scans terminate upstream during scanning or pruning. Selection does not persist a cursor: unselected patterns are reconsidered on later scans, and a repeatedly selected pattern producing no issue can delay others. A no-actionable-findings analysis
+still goes through verification; these Agents do not return the reserved exit field.
 
-`publish_issues` accepts the pruned scanner output and an accepted verifier envelope
+`publish_issues` accepts the selected single-group scanner output and an accepted verifier envelope
 `{"decision":"complete","output":<analysis>}` in `inputs` (in either order).
 Nonempty analysis must contain `commit_sha`, `summary`, and `findings`.
 Each finding may include `bug` for a clear code defect and `relayfold:human-input-needed` for critical decisions or missing information that require a human. Both classifications are checked by the verifier. Flagged issues list specific questions under Notes and human prerequisites in Acceptance Criteria. Both labels may be present; omission or `[]` means neither applies. The publisher adds `relayfold` and optional `bug` on creation; the shared `github.apply_labels` step applies the human-input label afterward. Dry-run drafts include all planned labels. Newly created entries include `repository`, `issue_number`, and `human_input_needed` for the shared step. A human adds the missing information in a comment and removes the human-input label to allow the issue-to-PR workflow to proceed.
 Each finding has `fingerprint`, `title`, and `body` with Problem, Goal, Acceptance
-Criteria, and Notes sections. At most three findings are accepted; fingerprints
-must correspond to scanned groups. It checks open and closed issues and returns
+Criteria, and Notes sections. At most one finding and one scan group are accepted; the finding fingerprint
+must correspond to the selected group. Analysis and verification must ground every log claim in that group, without combining evidence from other groups. It checks open and closed issues and returns
 `created`, `skipped`, `dry_run`, and `summary`, plus `drafts` when findings exist.
 Fingerprint markers use the `cloudwatch-log-scanner-cloudwatch` prefix; older markers no longer match the exact duplicate check. Dry runs return drafts without creating issues. An empty findings array performs
 no GitHub calls. GitHub failures propagate; issue POSTs are never retried automatically.

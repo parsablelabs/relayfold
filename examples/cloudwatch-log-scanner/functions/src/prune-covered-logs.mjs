@@ -14,8 +14,11 @@ export default function run({ inputs }) {
     ))
       covered.add(match[1]);
   }
+  const groups = scan.groups.filter((group) => !covered.has(group.fingerprint));
   return {
     ...scan,
-    groups: scan.groups.filter((group) => !covered.has(group.fingerprint)),
+    groups,
+    _workflow_exit_reason:
+      groups.length === 0 ? "No uncovered log patterns remain." : null,
   };
 }
