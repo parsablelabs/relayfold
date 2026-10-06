@@ -34,6 +34,36 @@ const reply = (json, status = 200) => ({
   json: async () => json,
 });
 
+test("rejects multiple groups or findings before any GitHub request", async () => {
+  const run = createPublisher({
+    fetch: () => assert.fail("No request expected"),
+  });
+  const other = { ...finding, fingerprint: "c".repeat(64) };
+  await assert.rejects(
+    run({
+      ...context,
+      inputs: [
+        {
+          ...scan,
+          groups: [
+            ...scan.groups,
+            { fingerprint: other.fingerprint, count: 1 },
+          ],
+        },
+        accepted(analysis),
+      ],
+    }),
+    /at most one selected group/,
+  );
+  await assert.rejects(
+    run({
+      ...context,
+      inputs: [scan, accepted({ ...analysis, findings: [finding, other] })],
+    }),
+    /At most one issue/,
+  );
+});
+
 test("publishes an issue with evidence and fingerprint using the write credential", async () => {
   const requests = [];
   const run = createPublisher({
@@ -87,7 +117,9 @@ test("dry-run returns a draft and never posts", async () => {
 
 test("finding labels are published or passed to the shared label step", async () => {
   for (const labels of [
-    ["bug"], [], ["relayfold:human-input-needed"],
+    ["bug"],
+    [],
+    ["relayfold:human-input-needed"],
     ["bug", "relayfold:human-input-needed"],
   ]) {
     for (const dry_run of [false, true]) {
@@ -111,9 +143,9 @@ test("finding labels are published or passed to the shared label step", async ()
       const issue = dry_run ? result.drafts[0] : posted[0];
       assert.deepEqual(issue.labels, [
         "relayfold",
-        ...(dry_run ? labels : labels.filter(
-          (label) => label !== "relayfold:human-input-needed",
-        )),
+        ...(dry_run
+          ? labels
+          : labels.filter((label) => label !== "relayfold:human-input-needed")),
       ]);
       if (!dry_run) {
         assert.equal(result.created[0].issue_number, 1);
@@ -132,7 +164,10 @@ test("rejects unsupported or malformed labels before network calls", async () =>
     fetch: () => assert.fail("No network request expected"),
   });
   for (const labels of [
-    null, "bug", ["enhancement"], ["bug", "bug"],
+    null,
+    "bug",
+    ["enhancement"],
+    ["bug", "bug"],
     ["relayfold:human-input-needed", "relayfold:human-input-needed"],
   ]) {
     await assert.rejects(

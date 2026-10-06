@@ -16,6 +16,8 @@ flowchart TD
     Scan["scan-cloudwatch: collect log evidence"]
     Issues["fetch-issues: open issues labeled relayfold"]
     Prune["prune-covered-logs: remove fingerprints covered by open issues"]
+    Select["select-group: choose one group by severity and impact"]
+    Prepare["prepare-selected-group: retain original selected evidence"]
     Analyze["analyze-main: draft findings or return empty object"]
     Verify{"verify-analysis: accept or retry?"}
     Publish["publish-issues: create labeled issues or finish with no work"]
@@ -29,34 +31,38 @@ flowchart TD
     Scan -->|"patterns remain"| Prune
     Issues --> Prune
     Prune -->|"all covered: exit reason returned"| Done
-    Prune -->|"patterns remain"| Analyze
+    Prune -->|"patterns remain"| Select
+    Prune --> Prepare
+    Select --> Prepare
+    Prepare --> Analyze
     Issues --> Analyze
-    Prune --> Verify
+    Prepare --> Verify
     Issues --> Verify
     Analyze --> Verify
     Verify -. "continue + feedback; up to 3 generations" .-> Analyze
     Verify -->|"complete + unchanged analysis or empty object"| Publish
-    Prune --> Publish
+    Prepare --> Publish
     Verify -->|"continue at retry limit"| Failed
     Publish --> Labels
     Labels --> Done
 </pre>
 
-1. `scan-cloudwatch` uses the AWS SDK to fetch paginated WARN/WARNING/ERROR keyword matches from each explicit region and log group. It normalizes recurring messages, counts occurrences, and passes up to three original samples per pattern to the analysis task. It returns `_workflow_exit_reason: "No matching log patterns were found."` when no patterns were collected, requesting successful early completion.
+1. `scan-cloudwatch` uses the AWS SDK to fetch paginated WARN/WARNING/ERROR keyword matches from each explicit region and log group. It normalizes recurring messages, counts occurrences, and retains up to three original samples per pattern for selection and analysis. It returns `_workflow_exit_reason: "No matching log patterns were found."` when no patterns were collected, requesting successful early completion.
 2. `fetch-issues` runs independently of scanning, fetching all open issues labeled `relayfold` in the input repository. It excludes pull requests and fails if it cannot retrieve the complete list.
-3. `prune-covered-logs` deterministically removes log patterns whose exact fingerprints appear in the fetched open issues, before any LLM analysis. It uses the existing issue markers and needs no separate persistent state. Only unmatched patterns and their samples reach analysis, verification, and publishing. The scan window and truncation information are preserved; `total_events` still counts the original scan before pruning. Unmarked or closed issues do not suppress patterns at this stage. It recomputes `_workflow_exit_reason` from the remaining groups and requests successful early completion with "No uncovered log patterns remain." when they are empty.
-4. `analyze-main` first inspects the scan. When `groups` is empty, it returns `{}` without tools or repository inspection. Otherwise, it clones the repository, records the main commit, and traces symptoms through its application services. It checks actual severity, current code, and the supplied open issues labeled `relayfold`, comparing root causes rather than titles. It waits for both scanning and issue fetching. It drafts at most three distinct, actionable improvements, or returns no findings with an explanation.
-5. `verify-analysis` is an Agent that reviews the analysis against scan evidence and relevant repository context. It accepts the unchanged analysis or returns actionable feedback to retry `analyze-main`. The loop permits three generations and fails if the last is rejected; scanning is not repeated.
-6. `publish-issues` consumes the accepted verifier output, validates the drafts and checks all existing issues for stable fingerprint markers before submitting them. Each issue includes **Problem**, **Goal**, **Acceptance Criteria**, and **Notes**, with log evidence, code permalinks, root-cause reasoning, and regression-test criteria.
+3. `prune-covered-logs` deterministically removes log patterns whose exact fingerprints appear in the fetched open issues, before any LLM analysis. It uses the existing issue markers and needs no separate persistent state. All unmatched patterns reach selection; only the selected pattern and its samples reach analysis, verification, and publishing. The scan window and truncation information are preserved; `total_events` still counts the original scan before pruning. Unmarked or closed issues do not suppress patterns at this stage. It recomputes `_workflow_exit_reason` from the remaining groups and requests successful early completion with "No uncovered log patterns remain." when they are empty.
+4. `select-group` uses an Agent without tools to choose exactly one uncovered pattern by actual severity and likely user impact. Recurrence and recency break ties; keyword matches alone do not establish severity. It requires a nonempty pruned scan and returns the original non-null fingerprint and a short selection reason; empty scans terminate upstream. `prepare-selected-group` validates that fingerprint and extracts the original group unchanged, preserving the scan window, truncation, and original `total_events`. No unselected group is passed downstream.
+5. `analyze-main` first inspects the scan. When `groups` is empty, it returns `{}` without tools or repository inspection. Otherwise, it clones the repository, records the main commit, and traces symptoms through its application services. It checks actual severity, current code, and the supplied open issues labeled `relayfold`, comparing root causes rather than titles. It waits for both scanning and issue fetching. It investigates only the selected group and drafts at most one actionable issue, or returns no findings with an explanation. Every log claim must come from that group; unrelated symptoms must not be combined.
+6. `verify-analysis` is an Agent that reviews the analysis against scan evidence and relevant repository context. It accepts the unchanged analysis or returns actionable feedback to retry `analyze-main`. The loop permits three generations and fails if the last is rejected; scanning is not repeated.
+7. `publish-issues` consumes the accepted verifier output, validates the drafts and checks all existing issues for stable fingerprint markers before submitting them. Each issue includes **Problem**, **Goal**, **Acceptance Criteria**, and **Notes**, with log evidence, code permalinks, root-cause reasoning, and regression-test criteria.
 
-7. `apply-labels` uses the shared `github.apply_labels` Function to add `relayfold:human-input-needed` to newly published issues whose verified findings require human decisions or missing information. It creates the repository label if needed and confirms application. Dry runs and no-work results make no labeling requests.
+8. `apply-labels` uses the shared `github.apply_labels` Function to add `relayfold:human-input-needed` to newly published issues whose verified findings require human decisions or missing information. It creates the repository label if needed and confirms application. Dry runs and no-work results make no labeling requests.
 
 Analysis and verification assess whether each finding is immediately implementable. Flagged findings must list specific questions under Notes and distinguish human prerequisites from implementation tasks in Acceptance Criteria. Routine implementation choices and code investigation do not require the label. A human supplies the answers in an issue comment and removes `relayfold:human-input-needed`; the issue-to-PR workflow rejects the issue until that label is removed.
 
 New issues receive the `relayfold` label so later runs include them in semantic duplicate inspection. Analysis may also select the optional `bug` label when log and code evidence establish a clear bug, with the defect explained in the issue body and checked by the verifier. General improvements and uncertain hypotheses do not receive `bug`. Dry-run drafts include the labels that would be published. That inspection covers open labeled issues; the publisher also checks fingerprint markers across open and closed issues immediately before creating new ones.
 
 An empty scan, or a scan whose patterns are all covered by open issues, completes
-successfully before either Agent runs. Both `scan-cloudwatch` and
+successfully before any Agent runs. Both `scan-cloudwatch` and
 `prune-covered-logs` return the reserved `_workflow_exit_reason` field; no YAML
 exit toggle is needed.
 
@@ -120,7 +126,7 @@ Grouping normalizes IDs and numbers only in an internal signature, not in sample
 ## Build, test, and register Functions
 
 The workflow references `cloudwatch-log-scanner.scan_cloudwatch`, `cloudwatch-log-scanner.fetch_issues`,
-`cloudwatch-log-scanner.prune_covered_logs`, and `cloudwatch-log-scanner.publish_issues`. The shared label step references `github.apply_labels` from [`examples/functions`](https://github.com/parsablelabs/relayfold/tree/main/examples/functions). The scanner Functions' standalone source, manifest, tests, and
+`cloudwatch-log-scanner.prune_covered_logs`, `cloudwatch-log-scanner.prepare_selected_group`, and `cloudwatch-log-scanner.publish_issues`. The shared label step references `github.apply_labels` from [`examples/functions`](https://github.com/parsablelabs/relayfold/tree/main/examples/functions). The scanner Functions' standalone source, manifest, tests, and
 artifact build script live in
 [`examples/cloudwatch-log-scanner/functions`](https://github.com/parsablelabs/relayfold/tree/main/examples/cloudwatch-log-scanner/functions).
 Issue fingerprint markers use the `cloudwatch-log-scanner-cloudwatch` prefix.
@@ -140,6 +146,8 @@ curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.fetch_issues.json
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.prune_covered_logs.json
+curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
+  --data-binary @dist/cloudwatch-log-scanner.prepare_selected_group.json
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.publish_issues.json
 cd ../../functions
@@ -211,31 +219,4 @@ issues and is the default. After completion, inspect the publishing result:
 curl -fsS "$RELAYFOLD_URL/workflows/<workflow_id>/tasks/publish-issues"
 ```
 
-## Run periodically
-
-[`examples/fillmyfunnel_scheduler.yaml`](https://github.com/parsablelabs/relayfold/blob/main/examples/fillmyfunnel_scheduler.yaml)
-provides a daily schedule at 12:00 UTC. Replace its region and log-group placeholders,
-then merge the entry into your scheduler file and enable scheduling. For an hourly
-scan, set `cron: "0 * * * *"` and `lookback_hours: 1`.
-
-```bash
-export RELAYFOLD_SCHEDULER_ENABLED=true
-export RELAYFOLD_SCHEDULER_CONFIG_PATH=./examples/fillmyfunnel_scheduler.yaml
-```
-
-Set these on the orchestrator process; Docker deployments also need the scheduler
-file mounted at their configured path. See [Scheduled Workflows](/relayfold/docs/operations/scheduler/).
-The example schedule is not enabled automatically.
-
-The scan ends five minutes before execution to allow ingestion to settle and
-includes ten minutes of overlap. Fingerprint markers and semantic checks against
-existing issues reduce repeat submissions. Closed issues are skipped too; the
-workflow does not reopen or comment on them. Different wording can still produce
-new fingerprints, and concurrent manual runs can race during issue creation.
-Use the scheduler's active-instance exclusion and avoid overlapping manual runs.
-GitHub POST requests are not automatically retried after uncertain responses.
-
-This workflow reviews current `main`, which may differ from the deployed version.
-Issue drafts must explain that uncertainty. Scheduling does not catch up missed
-occurrences; events ingested after the overlap or during long outages may require
-a manual run with a larger lookback.
+Each run investigates one group and creates at most one issue. Other groups are reconsidered on later scans; they are not queued persistently. A selected group that yields no actionable issue can be selected again and delay lower-priority groups. Inspect the `select-group` task output for its selection reason.
