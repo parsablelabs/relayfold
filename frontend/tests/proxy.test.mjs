@@ -39,4 +39,10 @@ test('Vite forwards API host, query, credentials and JSON body without changing 
   const invalid = await fetch(`${address}/api/workflows`, { headers: { 'X-RelayFold-Host': 'ftp://localhost' } })
   assert.equal(invalid.status, 400)
   assert.equal((await fetch(address)).status, 200)
+  for (const path of ['/functions/format.hello', '/workflows/example', '/instances/run?tab=events']) {
+    const page = await fetch(`${address}${path}`)
+    assert.equal(page.status, 200, path)
+    assert.match(page.headers.get('content-type'), /text\/html/)
+    assert.match(await page.text(), /id="root"/)
+  }
 })

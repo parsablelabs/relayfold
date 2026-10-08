@@ -66,6 +66,16 @@ not refresh automatically.
 Configure the orchestrator's public API host in **Settings**. The host is saved
 in your browser. Controls support standard Tab navigation and Enter activation.
 
+Console pages have shareable URLs: `/functions`, `/workflows`, `/instances`, and
+`/settings`. Detail pages append the definition or instance ID, such as
+`/functions/format.hello` or `/instances/123`. Links support opening in a new tab,
+and browser Back and Forward restore the previous view. Refreshing a detail URL
+opens that same view. `/` opens the instance list.
+Registration views use `/functions?tab=register` and `/workflows?tab=register`;
+instance events use `/instances/123?tab=events`.
+When hosting the built frontend yourself, configure the web server to serve
+`index.html` for console routes. The frontend Docker image includes this fallback.
+
 ## Current status
 
 > **RelayFold is still in an early development stage, expect bugs and breaking changes.**

@@ -16,5 +16,6 @@ LABEL org.opencontainers.image.source="https://github.com/parsablelabs/relayfold
       org.opencontainers.image.licenses="MIT"
 
 COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

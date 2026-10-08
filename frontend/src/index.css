@@ -15,8 +15,9 @@
 body { font-family: var(--font-family-main); font-size: 13px; background: var(--color-bg-base); color: var(--color-text-main); line-height: 1.6; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
+a { color: inherit; text-decoration: none; }
 button:disabled { opacity: .5; cursor: default; }
-:where(button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+:where(a, button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 ::selection { background: #78a5ff; color: #0b101b; }
 #root { min-height: 100vh; }
 .app-container { display: grid; grid-template-columns: 208px minmax(0, 1fr); grid-template-rows: auto 1fr auto; min-height: 100vh; }
@@ -52,7 +53,7 @@ button:disabled { opacity: .5; cursor: default; }
 .btn-secondary:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); }
 .text-button { background: none; border: none; color: var(--color-primary); text-align: left; overflow-wrap: anywhere; }
 .text-button:hover { text-decoration: underline; }
-.back { margin-bottom: 16px; }
+.back { display: inline-block; margin-bottom: 16px; }
 .instance-tabs, .section-tabs { display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 16px; }
 .instance-tabs .active, .section-tabs .active { color: var(--color-primary); border-color: var(--color-primary); background: #78a5ff14; }
 .notice { padding: 12px; border: 1px solid var(--color-border); margin: 12px 0; color: var(--color-text-muted); overflow-wrap: anywhere; }

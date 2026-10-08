@@ -7,6 +7,9 @@ import type { Definition } from './workflowGraph'
 import { createTriggerValidator, exampleTriggerInput } from './triggerInput'
 import WorkflowDiagram from './WorkflowDiagram'
 import { pendingHumanInputs, shouldPollInstance } from './instanceState'
+import Link from './Link'
+import { navigate, useLocation } from './navigation'
+import { pageUrl, parseRoute } from './routes'
 import './index.css'
 
 const defaultHost = import.meta.env.VITE_DEFAULT_API_HOST || 'http://localhost:3000'
@@ -57,14 +60,14 @@ function Refresh({ updated, refresh, poll = true, idle = 'Automatic refresh stop
 }
 type Api = ReturnType<typeof createApi>
 
-function Workflows({ api, open }: { api: Api; open: (id: string) => void }) {
+function Workflows({ api }: { api: Api }) {
   const load = useCallback((signal: AbortSignal) => api.workflows(signal), [api])
   const state = usePolling(load)
   return <>
     <Refresh {...state} />
     <Feedback error={state.error} loading={!state.data} empty={state.data?.workflow_defs.length === 0} />
     <div className="workflow-grid">{state.data?.workflow_defs.map(workflow => <article className="glass-panel workflow-card" key={workflow.id}>
-      <div className="eyebrow">Registered workflow</div><h2><button className="text-button" onClick={() => open(workflow.id)}>{workflow.id}</button></h2><p>{workflow.description || 'No description provided.'}</p>
+      <div className="eyebrow">Registered workflow</div><h2><Link className="text-button" href={pageUrl('workflows', workflow.id)}>{workflow.id}</Link></h2><p>{workflow.description || 'No description provided.'}</p>
       <dl><dt>Registered</dt><dd>{date(workflow.created_at_epoch_ms)}</dd><dt>Last invoked</dt><dd>{workflow.last_invoked_at_epoch_ms == null ? 'Never' : date(workflow.last_invoked_at_epoch_ms)}</dd></dl>
     </article>)}</div>
   </>
@@ -81,23 +84,23 @@ function DefinitionTabs({ section, tab, select }: { section: 'workflows' | 'func
     }}>{value === 'browse' ? `Registered ${section}` : section === 'workflows' ? 'Register workflow' : 'Register function'}</button>)}
   </div>
 }
-function FunctionList({ api, open }: { api: Api; open: (id: string) => void }) {
+function FunctionList({ api }: { api: Api }) {
   const load = useCallback((signal: AbortSignal) => api.functions(signal), [api])
   const state = usePolling(load)
   return <>
     <Refresh {...state} />
     <Feedback error={state.error} loading={!state.data} empty={state.data?.function_defs.length === 0} />
     {state.data?.function_defs.map(definition => <article className="glass-panel panel" key={definition.id}>
-      <div className="eyebrow">Registered function</div><h2><button className="text-button" onClick={() => open(definition.id)}>{definition.id}</button></h2>
+      <div className="eyebrow">Registered function</div><h2><Link className="text-button" href={pageUrl('functions', definition.id)}>{definition.id}</Link></h2>
     </article>)}
   </>
 }
-function FunctionDetails({ api, id, back }: { api: Api; id: string; back: () => void }) {
+function FunctionDetails({ api, id }: { api: Api; id: string }) {
   const load = useCallback((signal: AbortSignal) => api.functionDefinition(id, signal), [api, id])
   const state = usePolling(load, false)
   const definition = state.data
   return <>
-    <button className="text-button back" onClick={back}>← Back to functions</button>
+    <Link className="text-button back" href="/functions">← Back to functions</Link>
     <Refresh {...state} poll={false} idle="Loaded when this function opens" />
     <Feedback error={state.error} loading={!definition} />
     {definition && <section className="glass-panel panel">
@@ -107,13 +110,11 @@ function FunctionDetails({ api, id, back }: { api: Api; id: string; back: () => 
     </section>}
   </>
 }
-function Functions({ api }: { api: Api }) {
-  const [selected, setSelected] = useState<string | null>(null)
-  const [tab, setTab] = useState<DefinitionTab>('browse')
+function Functions({ api, selected, tab }: { api: Api; selected?: string; tab: DefinitionTab }) {
   return <>
-    <DefinitionTabs section="functions" tab={tab} select={setTab} />
-    <div id="functions-browse-panel" role="tabpanel" aria-labelledby="functions-browse-tab" hidden={tab !== 'browse'}>{tab === 'browse' && (selected ? <FunctionDetails key={selected} api={api} id={selected} back={() => setSelected(null)} /> : <FunctionList api={api} open={setSelected} />)}</div>
-    <div id="functions-register-panel" role="tabpanel" aria-labelledby="functions-register-tab" hidden={tab !== 'register'}><RegisterDefinition kind="function" api={api} browse={() => { setSelected(null); setTab('browse') }} /></div>
+    <DefinitionTabs section="functions" tab={tab} select={value => navigate(value === 'register' ? '/functions?tab=register' : '/functions')} />
+    <div id="functions-browse-panel" role="tabpanel" aria-labelledby="functions-browse-tab" hidden={tab !== 'browse'}>{tab === 'browse' && (selected ? <FunctionDetails key={selected} api={api} id={selected} /> : <FunctionList api={api} />)}</div>
+    <div id="functions-register-panel" role="tabpanel" aria-labelledby="functions-register-tab" hidden={tab !== 'register'}><RegisterDefinition kind="function" api={api} browse={() => navigate('/functions')} /></div>
   </>
 }
 function RegisterDefinition({ api, browse, kind }: { api: Api; browse: () => void; kind: 'workflow' | 'function' }) {
@@ -171,7 +172,7 @@ function StartWorkflow({ api, id, definition, openInstance }: { api: Api; id: st
     {error && <p className="notice error" role="alert">{error}</p>}
   </form>
 }
-function WorkflowDetails({ api, id, back, openInstance }: { api: Api; id: string; back: () => void; openInstance: (id: string) => void }) {
+function WorkflowDetails({ api, id }: { api: Api; id: string }) {
   const load = useCallback(async (signal: AbortSignal) => {
     const yaml = await api.definition(id, signal)
     try { return { yaml, diagram: diagramFromYaml(yaml), error: undefined } }
@@ -180,11 +181,11 @@ function WorkflowDetails({ api, id, back, openInstance }: { api: Api; id: string
   const state = usePolling(load, false)
   const diagram = state.data?.diagram
   return <>
-    <button className="text-button back" onClick={back}>← Back to workflows</button>
+    <Link className="text-button back" href="/workflows">← Back to workflows</Link>
     <Refresh {...state} poll={false} idle="Loaded when this workflow opens" /><Feedback error={state.error} loading={!state.data} />
     {state.data && <>
       <section className="glass-panel panel"><h2>{diagram?.definition.id ?? id}</h2><p className="muted">{diagram?.definition.description}</p></section>
-      {diagram && <StartWorkflow api={api} id={id} definition={diagram.definition} openInstance={openInstance} />}
+      {diagram && <StartWorkflow api={api} id={id} definition={diagram.definition} openInstance={instanceId => navigate(pageUrl('instances', instanceId))} />}
       <h2 className="section-title">Workflow diagram</h2>
       <p className="muted diagram-legend">Arrows show data bindings. Diamonds mark verifiers; dashed arrows show explicitly configured rerun targets. Tasks without bindings are independent.</p>
       <section className="glass-panel panel">
@@ -195,18 +196,18 @@ function WorkflowDetails({ api, id, back, openInstance }: { api: Api; id: string
     </>}
   </>
 }
-function Instances({ api, open }: { api: Api; open: (id: string) => void }) {
+function Instances({ api }: { api: Api }) {
   const [status, setStatus] = useState('')
   return <><div className="filters"><label htmlFor="status-filter">Status</label><select id="status-filter" value={status} onChange={event => setStatus(event.target.value)}>
     <option value="">All statuses</option>{statuses.map(value => <option key={value} value={value}>{label(value)}</option>)}
-  </select><span>Newest first by creation time</span></div><InstanceList key={status} api={api} status={status} open={open} /></>
+  </select><span>Newest first by creation time</span></div><InstanceList key={status} api={api} status={status} /></>
 }
-function InstanceList({ api, status, open }: { api: Api; status: string; open: (id: string) => void }) {
+function InstanceList({ api, status }: { api: Api; status: string }) {
   const load = useCallback((signal: AbortSignal) => api.instances(status, signal), [api, status])
   const state = usePolling(load)
   return <><Refresh {...state} /><Feedback error={state.error} loading={!state.data} empty={state.data?.length === 0} />
     {state.data && state.data.length > 0 && <div className="glass-panel table-scroll"><table><thead><tr><th>Instance / Workflow</th><th>Status</th><th>Created</th><th>Tasks completed</th><th>Last modified</th></tr></thead>
-      <tbody>{state.data.map(instance => <tr key={instance.id}><td><button className="text-button" onClick={() => open(instance.id)}>{instance.id}</button><div className="muted">{instance.workflow_def_id}</div></td><td><Badge status={instance.status} /></td><td>{date(instance.created_at_epoch_ms)}</td><td>{instance.completed_task_count} / {instance.total_task_count}</td><td>{date(instance.modified_at_epoch_ms)}</td></tr>)}</tbody></table></div>}
+      <tbody>{state.data.map(instance => <tr key={instance.id}><td><Link className="text-button" href={pageUrl('instances', instance.id)}>{instance.id}</Link><div className="muted">{instance.workflow_def_id}</div></td><td><Badge status={instance.status} /></td><td>{date(instance.created_at_epoch_ms)}</td><td>{instance.completed_task_count} / {instance.total_task_count}</td><td>{date(instance.modified_at_epoch_ms)}</td></tr>)}</tbody></table></div>}
   </>
 }
 function HumanInput({ api, report, task, complete, busy }: { api: Api; report: Report; task: Task; complete: () => void; busy: boolean }) {
@@ -263,8 +264,8 @@ function InstanceDiagram({ api, report }: { api: Api; report: Report }) {
     </section>
   </>
 }
-function InstanceDetails({ api, id, back }: { api: Api; id: string; back: () => void }) {
-  const [tab, setTab] = useState<'status' | 'events'>('status')
+function InstanceDetails({ api, id, tab }: { api: Api; id: string; tab: 'status' | 'events' }) {
+  function setTab(value: 'status' | 'events') { navigate(pageUrl('instances', id) + (value === 'events' ? '?tab=events' : '')) }
   const load = useCallback((signal: AbortSignal) => api.report(id, signal), [api, id])
   const state = usePolling(load, shouldPollInstance)
   const [busy, setBusy] = useState(false)
@@ -280,7 +281,7 @@ function InstanceDetails({ api, id, back }: { api: Api; id: string; back: () => 
   function action(kind: 'pause' | 'resume') {
     return performAction(() => api.action(id, kind), kind === 'pause' ? 'Workflow paused.' : 'Workflow queued to resume.')
   }
-  return <><button className="text-button back" onClick={back}>← Back to instances</button>
+  return <><Link className="text-button back" href="/instances">← Back to instances</Link>
     <div className="instance-tabs" role="tablist" aria-label="Instance details">
       {(['status', 'events'] as const).map(value => <button key={value} id={`instance-${value}-tab`} role="tab" aria-selected={tab === value} aria-controls={`instance-${value}-panel`} tabIndex={tab === value ? 0 : -1} className={`btn btn-secondary ${tab === value ? 'active' : ''}`} onClick={() => setTab(value)} onKeyDown={event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
@@ -332,27 +333,31 @@ function Settings({ connection, save }: { connection: Connection; save: (connect
   </form>
 }
 function App() {
-  const [page, setPage] = useState<'workflows' | 'functions' | 'instances' | 'settings'>('instances')
-  const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null)
-  const [workflowTab, setWorkflowTab] = useState<'browse' | 'register'>('browse')
-  const [selected, setSelected] = useState<string | null>(null)
+  const location = useLocation()
+  const route = parseRoute(location)
+  const page = route?.page
+  const selected = route?.id
+  const workflowTab = route?.definitionTab ?? 'browse'
+  useEffect(() => {
+    if (window.location.pathname === '/') navigate('/instances' + window.location.search, true)
+  }, [])
   const [connection, setConnection] = useState<Connection>(() => ({ host: savedHost(), apiKey: '' }))
   const api = useMemo(() => createApi(connection), [connection])
-  const title = page === 'workflows' ? workflowTab === 'register' ? 'Register workflow' : selectedWorkflow ? 'Workflow definition' : 'Workflows' : page === 'functions' ? 'Functions' : page === 'settings' ? 'Settings' : selected ? 'Instance details' : 'Instances'
+  const title = !route ? 'Page not found' : page === 'workflows' ? workflowTab === 'register' ? 'Register workflow' : selected ? 'Workflow definition' : 'Workflows' : page === 'functions' ? workflowTab === 'register' ? 'Register function' : selected ? 'Function definition' : 'Functions' : page === 'settings' ? 'Settings' : selected ? 'Instance details' : 'Instances'
   return <div className="app-container"><div className="terminal-header"><span className="terminal-brand">[rf] RelayFold</span><span className="muted">workflow orchestrator / console</span></div><aside className="sidebar"><nav className="nav-menu" aria-label="Main navigation">
-    {(['workflows', 'functions', 'instances', 'settings'] as const).map(value => <button key={value} className={`nav-item ${page === value ? 'active' : ''}`} aria-current={page === value ? 'page' : undefined} onClick={() => { setPage(value); setSelectedWorkflow(null); setWorkflowTab('browse'); if (value !== 'instances') setSelected(null) }}>{page === value && <span className="nav-marker" aria-hidden="true">{'>'}</span>}{value[0].toUpperCase() + value.slice(1)}</button>)}
+    {(['workflows', 'functions', 'instances', 'settings'] as const).map(value => <Link key={value} href={pageUrl(value)} className={`nav-item ${page === value ? 'active' : ''}`} aria-current={page === value ? 'page' : undefined}>{page === value && <span className="nav-marker" aria-hidden="true">{'>'}</span>}{value[0].toUpperCase() + value.slice(1)}</Link>)}
     </nav><div className="sidebar-host">Public API<br /><span>{connection.host}</span></div></aside>
-    <main className="main-content"><header className="page-header"><div><h1 className="page-title">{title}</h1><p className="page-subtitle">{page === 'workflows' ? 'Browse and register workflow definitions.' : page === 'functions' ? 'Browse and register reusable functions.' : page === 'settings' ? 'Configure your orchestrator connection.' : 'Monitor workflow execution and respond to input requests.'}</p></div></header>
-      {page === 'settings' ? <Settings connection={connection} save={setConnection} /> : <div key={connection.host + connection.apiKey}>
+    <main className="main-content"><header className="page-header"><div><h1 className="page-title">{title}</h1><p className="page-subtitle">{!route ? 'This address does not match a console page.' : page === 'workflows' ? 'Browse and register workflow definitions.' : page === 'functions' ? 'Browse and register reusable functions.' : page === 'settings' ? 'Configure your orchestrator connection.' : 'Monitor workflow execution and respond to input requests.'}</p></div></header>
+      {!route ? <Link className="text-button" href="/instances">Go to instances</Link> : page === 'settings' ? <Settings connection={connection} save={setConnection} /> : <div key={connection.host + connection.apiKey}>
         {page === 'workflows' ? <>
-          <DefinitionTabs section="workflows" tab={workflowTab} select={setWorkflowTab} />
+          <DefinitionTabs section="workflows" tab={workflowTab} select={value => navigate(value === 'register' ? '/workflows?tab=register' : '/workflows')} />
           <div id="workflows-browse-panel" role="tabpanel" aria-labelledby="workflows-browse-tab" hidden={workflowTab !== 'browse'}>
-            {workflowTab === 'browse' && (selectedWorkflow ? <WorkflowDetails key={selectedWorkflow} api={api} id={selectedWorkflow} back={() => setSelectedWorkflow(null)} openInstance={id => { setSelected(id); setPage('instances') }} /> : <Workflows api={api} open={setSelectedWorkflow} />)}
+            {workflowTab === 'browse' && (selected ? <WorkflowDetails key={selected} api={api} id={selected} /> : <Workflows api={api} />)}
           </div>
           <div id="workflows-register-panel" role="tabpanel" aria-labelledby="workflows-register-tab" hidden={workflowTab !== 'register'}>
-            <RegisterDefinition kind="workflow" api={api} browse={() => { setSelectedWorkflow(null); setWorkflowTab('browse') }} />
+            <RegisterDefinition kind="workflow" api={api} browse={() => navigate('/workflows')} />
           </div>
-        </> : page === 'functions' ? <Functions api={api} /> : selected ? <InstanceDetails key={selected} api={api} id={selected} back={() => setSelected(null)} /> : <Instances api={api} open={setSelected} />}
+        </> : page === 'functions' ? <Functions api={api} selected={selected} tab={workflowTab} /> : selected ? <InstanceDetails key={selected} api={api} id={selected} tab={route.instanceTab} /> : <Instances api={api} />}
       </div>}
     </main><footer className="terminal-footer"><span>RelayFold / {title.toLowerCase()}</span><span>Tab to navigate · Enter to activate</span></footer></div>
 }
