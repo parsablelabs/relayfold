@@ -59,6 +59,7 @@ Register a one-task Function workflow:
 curl -sS -X POST "$RELAYFOLD_URL/workflow-def" \
   -d '{
     "id": "hello-workflow",
+    "example_input": { "name": "Ada" },
     "tasks": [
       {
         "id": "hello",
@@ -138,6 +139,11 @@ Response:
 Save the returned `id`; it is the workflow instance ID used for status and result reads.
 
 If the API returns `503 Service Unavailable`, no eligible worker host is registered yet.
+
+You can also start a run in the UI: open the registered workflow, review or edit
+**JSON trigger input**, and choose **Start workflow**. The `example_input` field
+in the definition above prefills this input with `{ "name": "Ada" }`. It does
+not supply a default for API requests or scheduled runs.
 
 ## Check status
 

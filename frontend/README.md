@@ -1,13 +1,29 @@
 # RelayFold frontend
 
-A React dashboard for the orchestrator's public API. Browse registered workflows,
+A React dashboard for the orchestrator's public API, with a terminal-inspired
+layout: monospace text, compact bordered panels, and labeled status indicators.
+Use the navigation rail to switch views, or Tab and Enter to operate controls.
+Browse registered workflows,
 open a workflow definition to see its Mermaid task diagram and registered YAML,
 and start a new instance with validated JSON trigger input,
 view instances newest first by creation time, filter by status, and open an
-instance to inspect task attempts and event logs with the latest event at the top. Instance details
-support plain-text or JSON human input, pause, resume, and restarting failed tasks. Views refresh every
-five seconds, with a manual refresh button. Completed workflows are labeled
+instance to inspect task attempts in the default **Instance Status** tab.
+Instance details support plain-text or JSON human input, pause, resume, and
+restarting failed tasks. Instance status refreshes every five seconds while
+**Pending** or **Running**, and stops automatically in other states. Use manual
+Refresh to check a stopped run for changes made elsewhere. Resume, retry, and
+human-input submission refresh status immediately; polling restarts if the
+returned status is Pending or Running. The instance list continues refreshing
+every five seconds. **Instance Events** loads event history only when opened, with
+the latest event at the top. Reopen the tab or use its Refresh button to fetch
+new events; event history does not poll automatically. Completed workflows are labeled
 **Success**. Termination is not available.
+
+The **Instance Status** execution diagram highlights task states and labels each
+step with its latest attempt's status and generation. Parallel running steps are
+all highlighted; older attempts remain in the task table. The workflow YAML is
+loaded once when opening an instance and reused as status changes. Workflow
+definition pages also load YAML once, with manual Refresh available.
 
 ## Start locally
 

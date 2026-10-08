@@ -5,6 +5,10 @@ import addFormats from 'ajv-formats'
 import type { ValidateFunction } from 'ajv'
 import type { Definition } from './workflowGraph.ts'
 
+export function exampleTriggerInput(definition: Definition): string {
+  return definition.example_input == null ? '' : JSON.stringify(definition.example_input, null, 2)
+}
+
 export function createTriggerValidator(definition: Definition) {
   const inbound = new Set(definition.data_bindings.map(binding => binding.target_task_id))
   const schemas = definition.tasks.filter(task => !inbound.has(task.id)).flatMap(task =>

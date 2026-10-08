@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { diagramFromYaml } from '../src/workflowGraph.ts'
+import type { Task } from '../src/api.ts'
 
 const task = (id: string) => ({ id, kind: { function: { code: 'return {}' } } })
 
@@ -40,11 +41,29 @@ test('handles empty workflows and rejects invalid or ambiguous task connections'
 })
 
 test('builds diagrams from repository YAML examples', async () => {
-  for (const name of ['example_workflow.yaml', 'example_human_input_workflow.yaml', 'example_github_issue_pr_workflow.yaml']) {
+  for (const name of ['example_workflow.yaml', 'example_human_input_workflow.yaml', 'github_issue_to_pr/example_github_issue_pr_workflow.yaml']) {
     const yaml = await readFile(new URL(`../../examples/${name}`, import.meta.url), 'utf8')
     const { definition, source } = diagramFromYaml(yaml)
     assert.ok(definition.tasks.length > 0)
     assert.equal(source.split('\n').filter(line => /^ {2}task\d+[[{]/.test(line)).length, definition.tasks.length)
     assert.equal(source.split('\n').filter(line => line.includes('-->')).length, definition.data_bindings.length)
   }
+})
+
+test('highlights parallel tasks using their latest generation, regardless of API order', () => {
+  const yaml = JSON.stringify({ id: 'live', tasks: ['a', 'b', 'c', 'd'].map(task), data_bindings: [] })
+  const attempt = (id: string, generation: number, status: Task['status']): Task => ({ task_def_id: id, task_attempt_id: `${id}[${generation}]`, generation_index: generation, satisfaction: 'Pending', status })
+  const attempts = [attempt('a', 2, 'Running'), attempt('a', 1, 'Failed'), attempt('b', 1, 'Running'), attempt('c', 2, { InputNeeded: { input_request: 'Approve?' } }), attempt('c', 1, 'Completed')]
+  const { source } = diagramFromYaml(yaml, attempts)
+  assert.match(source, /class task0 running/)
+  assert.match(source, /class task1 running/)
+  assert.match(source, /class task2 inputneeded/)
+  assert.match(source, /class task3 pending/)
+  assert.match(source, /Running.*generation 2/)
+  assert.match(source, /Input needed.*generation 2/)
+  assert.ok(!source.includes('generation 1"]\n  class task0'))
+  const completed = diagramFromYaml(yaml, [attempt('a', 3, 'Completed'), attempt('b', 2, 'Failed')]).source
+  assert.match(completed, /class task0 completed/)
+  assert.match(completed, /Success.*generation 3/)
+  assert.match(completed, /class task1 failed/)
 })

@@ -33,6 +33,32 @@ RelayFold treats an agent the same way it treats a function or API task: as a no
 - **Controlled execution environments** — grant each task only the tools, skills, credentials, and shared workspace access it needs.
 - **Scalable worker execution** — separate orchestration from task execution so workers can register, claim tasks, and scale independently while preserving workflow-local state.
 
+## Browser console
+
+RelayFold's frontend provides a terminal-inspired browser console with compact
+panels, monospace text, blue accents matching the RelayFold logo, and labeled
+workflow statuses. Use **Workflows** to browse
+definitions, inspect diagrams and YAML, and start runs with JSON input. Use
+**Instances** to filter runs, inspect task attempts and events, respond to human
+input requests, pause or resume runs, and restart failed tasks. These views
+refresh every five seconds and also offer a manual refresh button. Instance
+details open on **Instance Status**, which shows task attempts, execution
+controls, and a diagram highlighting each step's latest attempt and generation.
+Verifier tasks appear in the diagram and task table alongside other steps.
+Diagrams use compact spacing and small monospace labels; wide diagrams scroll
+horizontally within their panel.
+Instance status polls while **Pending** or **Running**, and stops in other
+states. Use **Refresh** to check for changes made elsewhere. Resume, retry, and
+human-input submission refresh immediately and restart polling if the returned
+state is active. Diagram YAML loads once and is reused for status updates;
+workflow definition pages also load YAML once, with manual Refresh available.
+**Instance Events** fetches event history only when opened; reopen
+the tab or select its **Refresh** button to update events. Event history does
+not refresh automatically.
+
+Configure the orchestrator's public API host in **Settings**. The host is saved
+in your browser. Controls support standard Tab navigation and Enter activation.
+
 ## Current status
 
 > **RelayFold is still in an early development stage, expect bugs and breaking changes.**

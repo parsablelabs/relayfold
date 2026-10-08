@@ -12,9 +12,9 @@ export default function WorkflowDiagram({ source }: { source: string }) {
       try {
         const { default: mermaid } = await import('mermaid')
         if (cancelled) return
-        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'dark', fontFamily: 'Inter, system-ui, sans-serif', flowchart: { htmlLabels: false, useMaxWidth: false } })
+        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'base', fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, monospace', themeVariables: { fontSize: '12px', darkMode: true, background: '#111a2b', primaryColor: '#19253b', primaryTextColor: '#e2e8f4', primaryBorderColor: '#527ccb', lineColor: '#9aaac4', secondaryColor: '#19253b', tertiaryColor: '#111a2b' }, flowchart: { htmlLabels: false, useMaxWidth: false, nodeSpacing: 30, rankSpacing: 35, padding: 10 } })
         const result = await mermaid.render(id, source)
-        if (!cancelled) setSvg(result.svg)
+        if (!cancelled) { setSvg(result.svg); setError('') }
       } catch (error) {
         if (!cancelled) setError(error instanceof Error ? error.message : String(error))
       }

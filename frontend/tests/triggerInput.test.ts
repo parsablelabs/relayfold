@@ -1,11 +1,49 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createTriggerValidator } from '../src/triggerInput.ts'
+import { createTriggerValidator, exampleTriggerInput } from '../src/triggerInput.ts'
+import { diagramFromYaml } from '../src/workflowGraph.ts'
 import type { Definition } from '../src/workflowGraph.ts'
 
 function definition(schema: boolean | Record<string, unknown>): Definition {
   return { id: 'workflow', tasks: [{ id: 'entry', kind: { function: {} }, input_schemas: [schema] }], data_bindings: [] }
 }
+
+test('prefills trigger input from YAML and validates edits against the entry schema', () => {
+  const { definition: workflow } = diagramFromYaml(`id: example
+example_input:
+  name: Ada
+tasks:
+  - id: entry
+    kind:
+      function: {}
+    input_schemas:
+      - type: object
+        required: [name]
+        properties:
+          name:
+            type: string
+data_bindings: []
+`)
+  const text = exampleTriggerInput(workflow)
+  assert.equal(text, '{\n  "name": "Ada"\n}')
+  const validator = createTriggerValidator(workflow)
+  assert.deepEqual(validator.validate(text), { payload: { name: 'Ada' }, errors: [] })
+  assert.deepEqual(validator.validate('{"name":"Grace"}'), { payload: { name: 'Grace' }, errors: [] })
+  assert.ok(validator.validate('{"name":42}').errors.length > 0)
+  assert.ok(validator.validate('').errors.length > 0)
+  assert.deepEqual(workflow.example_input, { name: 'Ada' })
+})
+
+test('supports false, zero, arrays and strings as examples, and leaves absent or null examples empty', () => {
+  const workflow = definition(true)
+  assert.equal(exampleTriggerInput(workflow), '')
+  for (const payload of [false, 0, [], [1, 'two'], '', 'hello']) {
+    workflow.example_input = payload
+    assert.deepEqual(JSON.parse(exampleTriggerInput(workflow)), payload)
+  }
+  workflow.example_input = null
+  assert.equal(exampleTriggerInput(workflow), '')
+})
 
 test('validates required fields, nested types, enums and extra properties without coercing input', () => {
   const validator = createTriggerValidator(definition({ type: 'object', required: ['user'], additionalProperties: false, properties: { user: { type: 'object', required: ['age', 'role'], properties: { age: { type: 'integer', minimum: 18 }, role: { enum: ['admin', 'reader'] } } } } }))
