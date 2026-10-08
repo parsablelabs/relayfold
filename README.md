@@ -15,6 +15,9 @@ workflow model.
 
 > RelayFold is in early development. Expect bugs and breaking changes.
 
+<img width="1508" height="852" alt="image" src="https://github.com/user-attachments/assets/44987713-55a8-492d-8ef2-d644005a7ca1" />
+
+
 ## What RelayFold Provides
 
 - Mixed workflows of [Agent, Function, and API Call tasks](https://parsablelabs.github.io/relayfold/docs/concepts/tasks/)
