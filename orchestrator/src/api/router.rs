@@ -45,10 +45,13 @@ pub fn create_public_router(
 
     Router::new()
         .route("/health", get(handlers::health_check))
-        .route("/function-def", post(handlers::create_function_def))
+        .route(
+            "/function-def",
+            get(handlers::list_function_defs).post(handlers::create_function_def),
+        )
         .route(
             "/function-def/{def_id}",
-            delete(handlers::delete_function_def),
+            get(handlers::get_function_def).delete(handlers::delete_function_def),
         )
         .route(
             "/workflow-def",
@@ -363,6 +366,84 @@ mod tests {
         assert_eq!(
             *resolver.calls.lock().await,
             vec![None, None, None, Some("namespace-a".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn function_registry_lists_registered_functions_and_requires_a_namespace() {
+        let storage = Arc::new(MemoryStorage::new());
+        let router = test_router(
+            storage,
+            Arc::new(MemoryWorkflowQueue::new(10)),
+            Arc::new(TestNamespaceResolver::without_global_namespace()),
+        );
+        let (status, _) = request(&router, Method::GET, "/function-def", None, None).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let definition = json!({"id": "format.hello", "dependencies": [], "code": "export default async function run() {}"});
+        let (status, _) = request(
+            &router,
+            Method::POST,
+            "/function-def",
+            Some("Bearer namespace-a"),
+            Some(definition.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, body) = request(
+            &router,
+            Method::GET,
+            "/function-def",
+            Some("Bearer namespace-a"),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({"function_defs": [{"id": "format.hello"}]})
+        );
+        let (status, body) = request(
+            &router,
+            Method::GET,
+            "/function-def/format.hello",
+            Some("Bearer namespace-a"),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(serde_json::from_slice::<Value>(&body).unwrap(), definition);
+        for (id, credential) in [("missing", "namespace-a"), ("format.hello", "namespace-b")] {
+            let (status, _) = request(
+                &router,
+                Method::GET,
+                &format!("/function-def/{id}"),
+                Some(&format!("Bearer {credential}")),
+                None,
+            )
+            .await;
+            assert_eq!(status, StatusCode::NOT_FOUND);
+        }
+        let (status, _) = request(
+            &router,
+            Method::GET,
+            "/function-def/format.hello",
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let (status, body) = request(
+            &router,
+            Method::GET,
+            "/function-def",
+            Some("Bearer namespace-b"),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({"function_defs": []})
         );
     }
 

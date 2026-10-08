@@ -1,4 +1,7 @@
 id: github-issue-to-pr
+example_input:
+  repository: parsablelabs/relayfold
+  issue_number: 46
 
 # Example workflow that works a GitHub issue through implementation, verifier
 # review, PR creation when needed, and a final issue summary comment. The first

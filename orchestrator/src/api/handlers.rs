@@ -159,6 +159,40 @@ fn format_workflow_def(
     }
 }
 
+pub async fn list_function_defs(
+    State(state): State<PublicAppState>,
+    namespace: RequestNamespace,
+) -> Result<Json<Value>, StatusCode> {
+    let definitions = state
+        .function_service
+        .list_function_defs(&namespace)
+        .await
+        .map_err(|error| {
+            error!(%error, "failed to list function definitions");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    Ok(Json(json!({ "function_defs": definitions })))
+}
+
+pub async fn get_function_def(
+    State(state): State<PublicAppState>,
+    namespace: RequestNamespace,
+    Path(function_def_id): Path<String>,
+) -> Result<Json<FunctionDef>, StatusCode> {
+    match state
+        .function_service
+        .get_function_def(&namespace, &function_def_id)
+        .await
+    {
+        Ok(Some(definition)) => Ok(Json(definition)),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(error) => {
+            error!(%error, %function_def_id, "failed to get function definition");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 pub async fn create_function_def(
     State(state): State<PublicAppState>,
     namespace: RequestNamespace,

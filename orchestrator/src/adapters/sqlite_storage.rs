@@ -4,7 +4,7 @@ use sqlx::{Row, Sqlite, SqlitePool, Transaction};
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::core::function::models::FunctionDef;
+use crate::core::function::models::{FunctionDef, FunctionDefSummary};
 use crate::core::namespace::Namespace;
 use crate::core::task::{TaskInstance, TaskStatus};
 use crate::core::util::unix_timestamp_ms;
@@ -38,7 +38,7 @@ impl SqliteStorage {
     }
 
     #[cfg(test)]
-    async fn connect_in_memory() -> anyhow::Result<Self> {
+    pub(crate) async fn connect_in_memory() -> anyhow::Result<Self> {
         let options = SqliteConnectOptions::new()
             .in_memory(true)
             .foreign_keys(true);
@@ -241,6 +241,20 @@ impl StoragePort for SqliteStorage {
         Ok(row
             .map(|row| deserialize_json(row.get::<String, _>("definition_json").as_str()))
             .transpose()?)
+    }
+
+    async fn list_function_def(
+        &self,
+        namespace: &Namespace,
+    ) -> StorageResult<Vec<FunctionDefSummary>> {
+        let rows = sqlx::query("SELECT id FROM function_defs WHERE namespace = ? ORDER BY id")
+            .bind(namespace.as_str())
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| FunctionDefSummary { id: row.get("id") })
+            .collect())
     }
 
     async fn delete_function_def(&self, namespace: &Namespace, id: &str) -> StorageResult<bool> {

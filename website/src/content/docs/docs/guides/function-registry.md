@@ -67,6 +67,16 @@ Fields:
 
 ## Register a function
 
+In the UI, open **Functions → Register function**, paste a complete YAML or JSON
+definition, and click **Register function**. The page shows success or the API
+error and keeps your pasted definition available for edits. Registering an
+existing function ID replaces its code and dependencies.
+
+Choose **View registered functions** after success, or open the **Registered
+functions** tab, to browse the registry. The list shows function IDs. Click an ID
+to fetch its complete definition and view dependency versions and JavaScript code. The list refreshes
+automatically and has a manual **Refresh** button.
+
 ```bash
 export RELAYFOLD_URL=http://localhost:3000
 

@@ -26,3 +26,8 @@ pub struct FunctionDef {
     pub dependencies: Vec<FunctionDependency>,
     pub code: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionDefSummary {
+    pub id: String,
+}

@@ -53,12 +53,20 @@ generated definition and its credential requirements before registering it.
 
 ## Register a workflow
 
+In the UI, open **Workflows → Register workflow**. Paste a complete YAML or JSON
+definition into the large **Workflow definition** box and click **Register workflow**.
+The page confirms registration or shows the API error while keeping your pasted
+definition available to edit. Choose **View registered workflows** after success
+to find the workflow and start a run. Definitions with existing runs require a
+new ID when registering an update.
+
 Register a one-task Function workflow:
 
 ```bash
 curl -sS -X POST "$RELAYFOLD_URL/workflow-def" \
   -d '{
     "id": "hello-workflow",
+    "example_input": { "name": "Ada" },
     "tasks": [
       {
         "id": "hello",
@@ -138,6 +146,11 @@ Response:
 Save the returned `id`; it is the workflow instance ID used for status and result reads.
 
 If the API returns `503 Service Unavailable`, no eligible worker host is registered yet.
+
+You can also start a run in the UI: open the registered workflow, review or edit
+**JSON trigger input**, and choose **Start workflow**. The `example_input` field
+in the definition above prefills this input with `{ "name": "Ada" }`. It does
+not supply a default for API requests or scheduled runs.
 
 ## Check status
 

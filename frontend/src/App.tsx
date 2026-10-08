@@ -1,170 +1,359 @@
-import { useState } from 'react';
-import './index.css';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
+import { createApi, normalizeHost, statuses } from './api'
+import type { Connection, Report, Status, Task } from './api'
+import { diagramFromYaml } from './workflowGraph'
+import type { Definition } from './workflowGraph'
+import { createTriggerValidator, exampleTriggerInput } from './triggerInput'
+import WorkflowDiagram from './WorkflowDiagram'
+import { shouldPollInstance } from './instanceState'
+import './index.css'
 
-// Simple SVG Icons
-const IconDashboard = () => (
-  <svg xmlns="http://www.开展w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
-);
-
-const IconWorkflow = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
-);
-
-const IconRuns = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-);
-
-const IconSettings = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-);
-
-const IconPlus = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-);
-
-const IconActivity = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-);
-
-const IconCheckCircle = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-);
-
-function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
-
-  return (
-    <div className="app-container">
-      {/* Sidebar */}
-      <aside className="sidebar">
-        <div className="sidebar-logo">
-          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-          RelayFold
-        </div>
-
-        <div className="nav-section">
-          <div className="nav-section-title">Overview</div>
-          <ul className="nav-menu">
-            <li className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-              <IconDashboard /> Dashboard
-            </li>
-            <li className={`nav-item ${activeTab === 'workflows' ? 'active' : ''}`} onClick={() => setActiveTab('workflows')}>
-              <IconWorkflow /> Workflows
-            </li>
-            <li className={`nav-item ${activeTab === 'runs' ? 'active' : ''}`} onClick={() => setActiveTab('runs')}>
-              <IconRuns /> Runs
-            </li>
-          </ul>
-        </div>
-
-        <div className="nav-section">
-          <div className="nav-section-title">System</div>
-          <ul className="nav-menu">
-            <li className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
-              <IconSettings /> Settings
-            </li>
-          </ul>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="main-content">
-        <header className="page-header animate-fade-in">
-          <div>
-            <h1 className="page-title">Dashboard</h1>
-            <p className="page-subtitle">Welcome back to RelayFold Orchestrator</p>
-          </div>
-          <button className="btn btn-primary">
-            <IconPlus /> New Workflow
-          </button>
-        </header>
-
-        {/* Dashboard Grid */}
-        <div className="dashboard-grid animate-fade-in delay-1">
-          <div className="stat-card glass-panel">
-            <div className="stat-header">
-              <span className="stat-title">Active Runs</span>
-              <div className="stat-icon"><IconActivity /></div>
-            </div>
-            <div className="stat-value">12</div>
-          </div>
-          
-          <div className="stat-card glass-panel">
-            <div className="stat-header">
-              <span className="stat-title">Completed Tasks</span>
-              <div className="stat-icon" style={{ color: 'var(--color-accent)', background: 'rgba(16, 185, 129, 0.1)' }}>
-                <IconCheckCircle />
-              </div>
-            </div>
-            <div className="stat-value">8,241</div>
-          </div>
-          
-          <div className="stat-card glass-panel">
-            <div className="stat-header">
-              <span className="stat-title">Failed Tasks</span>
-              <div className="stat-icon" style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)' }}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-              </div>
-            </div>
-            <div className="stat-value">3</div>
-          </div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="animate-fade-in delay-2">
-          <h2 className="section-title">Recent Runs</h2>
-          <div className="activity-list glass-panel" style={{ padding: '8px' }}>
-            
-            <div className="activity-item">
-              <div className="activity-info">
-                <div className="activity-icon">
-                  <IconWorkflow />
-                </div>
-                <div className="activity-details">
-                  <div className="activity-name">Data Pipeline Etl</div>
-                  <div className="activity-meta">
-                    Started 2 mins ago • Triggered by schedule
-                  </div>
-                </div>
-              </div>
-              <div className="badge badge-running">Running</div>
-            </div>
-
-            <div className="activity-item">
-              <div className="activity-info">
-                <div className="activity-icon">
-                  <IconWorkflow />
-                </div>
-                <div className="activity-details">
-                  <div className="activity-name">Daily Report Generation</div>
-                  <div className="activity-meta">
-                    Completed 1 hour ago • 45 tasks executed
-                  </div>
-                </div>
-              </div>
-              <div className="badge badge-success">Completed</div>
-            </div>
-
-            <div className="activity-item">
-              <div className="activity-info">
-                <div className="activity-icon">
-                  <IconWorkflow />
-                </div>
-                <div className="activity-details">
-                  <div className="activity-name">Slack Notification Agent</div>
-                  <div className="activity-meta">
-                    Failed 3 hours ago • Error in API integration
-                  </div>
-                </div>
-              </div>
-              <div className="badge badge-failed">Failed</div>
-            </div>
-
-          </div>
-        </div>
-      </main>
-    </div>
-  );
+const defaultHost = import.meta.env.VITE_DEFAULT_API_HOST || 'http://localhost:3000'
+function savedHost() {
+  try { return normalizeHost(localStorage.getItem('relayfold-api-host') || defaultHost) }
+  catch { return defaultHost }
 }
+function date(value: number | null | undefined) {
+  return value == null ? 'Unknown' : new Date(value).toLocaleString()
+}
+function label(value: string) { return value === 'InputNeeded' ? 'Input needed' : value === 'Completed' ? 'Success' : value }
+function Badge({ status }: { status: string }) {
+  return <span className={`badge status-${status.toLowerCase()}`}>{label(status)}</span>
+}
+function taskStatus(task: Task) { return typeof task.status === 'string' ? task.status : 'InputNeeded' }
+function message(error: unknown) { return error instanceof Error ? error.message : String(error) }
 
-export default App;
+// One request at a time; navigation and refresh cancel obsolete reads.
+function usePolling<T>(load: (signal: AbortSignal) => Promise<T>, poll: boolean | ((data: T | undefined) => boolean) = true) {
+  const [state, setState] = useState<{ data?: T; error?: string; updated?: number }>({})
+  const latest = useRef<T | undefined>(undefined)
+  const [revision, setRevision] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout>
+    async function run() {
+      try {
+        const data = await load(controller.signal)
+        if (!controller.signal.aborted) { latest.current = data; setState({ data, updated: Date.now() }) }
+      } catch (error) {
+        if (!controller.signal.aborted) setState(previous => ({ ...previous, error: message(error) }))
+      } finally {
+        if (!controller.signal.aborted && (typeof poll === 'function' ? poll(latest.current) : poll)) timer = setTimeout(run, 5000)
+      }
+    }
+    void run()
+    return () => { controller.abort(); clearTimeout(timer) }
+  }, [load, revision, poll])
+  return { ...state, refresh: () => setRevision(value => value + 1) }
+}
+function Feedback({ error, loading, empty }: { error?: string; loading: boolean; empty?: boolean }) {
+  return <>{error && <p className="notice error" role="alert">{error}</p>}
+    {loading && !error && <p className="notice" role="status">Loading…</p>}
+    {empty && <p className="notice">No results found.</p>}</>
+}
+function Refresh({ updated, refresh, poll = true, idle = 'Automatic refresh stopped' }: { updated?: number; refresh: () => void; poll?: boolean; idle?: string }) {
+  return <div className="refresh"><span>{poll ? 'Refreshes every 5 seconds' : idle}{updated ? ` · Updated ${new Date(updated).toLocaleTimeString()}` : ''}</span><button className="btn btn-secondary" onClick={refresh}>Refresh</button></div>
+}
+type Api = ReturnType<typeof createApi>
+
+function Workflows({ api, open }: { api: Api; open: (id: string) => void }) {
+  const load = useCallback((signal: AbortSignal) => api.workflows(signal), [api])
+  const state = usePolling(load)
+  return <>
+    <Refresh {...state} />
+    <Feedback error={state.error} loading={!state.data} empty={state.data?.workflow_defs.length === 0} />
+    <div className="workflow-grid">{state.data?.workflow_defs.map(workflow => <article className="glass-panel workflow-card" key={workflow.id}>
+      <div className="eyebrow">Registered workflow</div><h2><button className="text-button" onClick={() => open(workflow.id)}>{workflow.id}</button></h2><p>{workflow.description || 'No description provided.'}</p>
+      <dl><dt>Registered</dt><dd>{date(workflow.created_at_epoch_ms)}</dd><dt>Last invoked</dt><dd>{workflow.last_invoked_at_epoch_ms == null ? 'Never' : date(workflow.last_invoked_at_epoch_ms)}</dd></dl>
+    </article>)}</div>
+  </>
+}
+type DefinitionTab = 'browse' | 'register'
+function DefinitionTabs({ section, tab, select }: { section: 'workflows' | 'functions'; tab: DefinitionTab; select: (tab: DefinitionTab) => void }) {
+  return <div className="section-tabs" role="tablist" aria-label={section === 'workflows' ? 'Workflows' : 'Functions'}>
+    {(['browse', 'register'] as const).map(value => <button key={value} type="button" id={`${section}-${value}-tab`} role="tab" aria-selected={tab === value} aria-controls={`${section}-${value}-panel`} tabIndex={tab === value ? 0 : -1} className={`btn btn-secondary ${tab === value ? 'active' : ''}`} onClick={() => select(value)} onKeyDown={event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      event.preventDefault()
+      const next = event.key === 'Home' ? 'browse' : event.key === 'End' ? 'register' : value === 'browse' ? 'register' : 'browse'
+      select(next)
+      document.getElementById(`${section}-${next}-tab`)?.focus()
+    }}>{value === 'browse' ? `Registered ${section}` : section === 'workflows' ? 'Register workflow' : 'Register function'}</button>)}
+  </div>
+}
+function FunctionList({ api, open }: { api: Api; open: (id: string) => void }) {
+  const load = useCallback((signal: AbortSignal) => api.functions(signal), [api])
+  const state = usePolling(load)
+  return <>
+    <Refresh {...state} />
+    <Feedback error={state.error} loading={!state.data} empty={state.data?.function_defs.length === 0} />
+    {state.data?.function_defs.map(definition => <article className="glass-panel panel" key={definition.id}>
+      <div className="eyebrow">Registered function</div><h2><button className="text-button" onClick={() => open(definition.id)}>{definition.id}</button></h2>
+    </article>)}
+  </>
+}
+function FunctionDetails({ api, id, back }: { api: Api; id: string; back: () => void }) {
+  const load = useCallback((signal: AbortSignal) => api.functionDefinition(id, signal), [api, id])
+  const state = usePolling(load, false)
+  const definition = state.data
+  return <>
+    <button className="text-button back" onClick={back}>← Back to functions</button>
+    <Refresh {...state} poll={false} idle="Loaded when this function opens" />
+    <Feedback error={state.error} loading={!definition} />
+    {definition && <section className="glass-panel panel">
+      <h2>{definition.id}</h2>
+      <p className="muted">Dependencies: {definition.dependencies.length ? definition.dependencies.map(dependency => `${dependency.name}@${dependency.version}`).join(', ') : 'None'}</p>
+      <h3>Function code</h3><pre>{definition.code}</pre>
+    </section>}
+  </>
+}
+function Functions({ api }: { api: Api }) {
+  const [selected, setSelected] = useState<string | null>(null)
+  const [tab, setTab] = useState<DefinitionTab>('browse')
+  return <>
+    <DefinitionTabs section="functions" tab={tab} select={setTab} />
+    <div id="functions-browse-panel" role="tabpanel" aria-labelledby="functions-browse-tab" hidden={tab !== 'browse'}>{tab === 'browse' && (selected ? <FunctionDetails key={selected} api={api} id={selected} back={() => setSelected(null)} /> : <FunctionList api={api} open={setSelected} />)}</div>
+    <div id="functions-register-panel" role="tabpanel" aria-labelledby="functions-register-tab" hidden={tab !== 'register'}><RegisterDefinition kind="function" api={api} browse={() => { setSelected(null); setTab('browse') }} /></div>
+  </>
+}
+function RegisterDefinition({ api, browse, kind }: { api: Api; browse: () => void; kind: 'workflow' | 'function' }) {
+  const [definition, setDefinition] = useState('')
+  const [registering, setRegistering] = useState(false)
+  const [error, setError] = useState('')
+  const [registered, setRegistered] = useState('')
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (registering || !definition.trim()) return
+    setError(''); setRegistered(''); setRegistering(true)
+    try {
+      const result = await (kind === 'workflow' ? api.registerWorkflow(definition) : api.registerFunction(definition))
+      setRegistered(result.id)
+    } catch (error) { setError(message(error)) }
+    finally { setRegistering(false) }
+  }
+  return <form className="glass-panel panel input-form" onSubmit={submit}>
+    <h2>Register {kind}</h2>
+    <p className="muted">Paste a complete YAML or JSON {kind} definition. {kind === 'workflow' ? 'You can update an existing definition until its first run; after that, use a new ID.' : 'Registering an existing function ID replaces its code and dependencies.'}</p>
+    <label>{kind === 'workflow' ? 'Workflow' : 'Function'} definition<textarea className="workflow-definition-input" rows={24} required spellCheck={false} value={definition} disabled={registering} aria-describedby={`${kind}-registration-feedback`} onChange={event => { setDefinition(event.target.value); setError(''); setRegistered('') }} placeholder={kind === 'workflow' ? 'id: my-workflow\ndescription: Describe your workflow.\nexample_input:\n  name: Ada\ntasks: []\ndata_bindings: []' : 'id: format.hello\ndependencies: []\ncode: |\n  export default async function run({ inputs }) {\n    return { response: inputs[0] };\n  }'} /></label>
+    <button className="btn btn-primary" disabled={registering || !definition.trim()}>{registering ? 'Registering…' : `Register ${kind}`}</button>
+    <div id={`${kind}-registration-feedback`} aria-live="polite">
+      {error && <p className="notice error" role="alert">{error}</p>}
+      {registered && <><p className="notice" role="status">{kind === 'workflow' ? 'Workflow' : 'Function'} {registered} registered.</p><button type="button" className="btn btn-secondary" onClick={browse}>View registered {kind === 'workflow' ? 'workflows' : 'functions'}</button></>}
+    </div>
+  </form>
+}
+function StartWorkflow({ api, id, definition, openInstance }: { api: Api; id: string; definition: Definition; openInstance: (id: string) => void }) {
+  const [input, setInput] = useState(() => exampleTriggerInput(definition))
+  const [starting, setStarting] = useState(false)
+  const [error, setError] = useState('')
+  const validator = useMemo(() => createTriggerValidator(definition), [definition])
+  const validation = useMemo(() => validator.validate(input), [validator, input])
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (starting) return
+    setError('')
+    if (validation.errors.length) return
+    setStarting(true)
+    try {
+      const instance = await api.startWorkflow(id, validation.payload)
+      openInstance(instance.id)
+    } catch (error) { setError(message(error)) }
+    finally { setStarting(false) }
+  }
+  return <form className="glass-panel panel input-form" onSubmit={submit}>
+    <h3>Start workflow</h3>
+    <div className="trigger-input-grid">
+      <div><label>JSON trigger input<textarea rows={12} value={input} disabled={starting} aria-invalid={validation.errors.length > 0} aria-describedby="trigger-validation" onChange={event => { setInput(event.target.value); setError('') }} placeholder={'{"name": "Ada"}'} /></label><p className="muted">{validator.schemas.length ? 'Input must satisfy every entry task schema shown.' : 'No entry task declares an input schema. Input is optional.'}</p></div>
+      <div className="trigger-schemas"><h4>Input schema</h4>{validator.schemas.length ? validator.schemas.map(({ taskId, index, schema }) => <label key={`${taskId}:${index}`}>{taskId} · input slot {index + 1}<textarea rows={12} readOnly value={JSON.stringify(schema, null, 2)} /></label>) : <p className="notice">No input schema defined.</p>}</div>
+    </div>
+    <div id="trigger-validation" aria-live="polite">{validation.errors.length > 0 && <ul className="notice error">{validation.errors.map((error, index) => <li key={index}>{error}</li>)}</ul>}</div>
+    <button className="btn btn-primary" disabled={starting || validation.errors.length > 0}>{starting ? 'Starting…' : 'Start workflow'}</button>
+    {error && <p className="notice error" role="alert">{error}</p>}
+  </form>
+}
+function WorkflowDetails({ api, id, back, openInstance }: { api: Api; id: string; back: () => void; openInstance: (id: string) => void }) {
+  const load = useCallback(async (signal: AbortSignal) => {
+    const yaml = await api.definition(id, signal)
+    try { return { yaml, diagram: diagramFromYaml(yaml), error: undefined } }
+    catch (error) { return { yaml, diagram: undefined, error: message(error) } }
+  }, [api, id])
+  const state = usePolling(load, false)
+  const diagram = state.data?.diagram
+  return <>
+    <button className="text-button back" onClick={back}>← Back to workflows</button>
+    <Refresh {...state} poll={false} idle="Loaded when this workflow opens" /><Feedback error={state.error} loading={!state.data} />
+    {state.data && <>
+      <section className="glass-panel panel"><h2>{diagram?.definition.id ?? id}</h2><p className="muted">{diagram?.definition.description}</p></section>
+      {diagram && <StartWorkflow api={api} id={id} definition={diagram.definition} openInstance={openInstance} />}
+      <h2 className="section-title">Workflow diagram</h2>
+      <p className="muted diagram-legend">Arrows show data bindings. Diamonds mark verifiers; dashed arrows show explicitly configured rerun targets. Tasks without bindings are independent.</p>
+      <section className="glass-panel panel">
+        {state.data.error && <p className="notice error" role="alert">Unable to build workflow diagram: {state.data.error}</p>}
+        {diagram && (diagram.definition.tasks.length ? <WorkflowDiagram key={diagram.source} source={diagram.source} /> : <p className="notice">This workflow has no tasks.</p>)}
+      </section>
+      <details className="glass-panel panel"><summary>Registered YAML configuration</summary><pre>{state.data.yaml}</pre></details>
+    </>}
+  </>
+}
+function Instances({ api, open }: { api: Api; open: (id: string) => void }) {
+  const [status, setStatus] = useState('')
+  return <><div className="filters"><label htmlFor="status-filter">Status</label><select id="status-filter" value={status} onChange={event => setStatus(event.target.value)}>
+    <option value="">All statuses</option>{statuses.map(value => <option key={value} value={value}>{label(value)}</option>)}
+  </select><span>Newest first by creation time</span></div><InstanceList key={status} api={api} status={status} open={open} /></>
+}
+function InstanceList({ api, status, open }: { api: Api; status: string; open: (id: string) => void }) {
+  const load = useCallback((signal: AbortSignal) => api.instances(status, signal), [api, status])
+  const state = usePolling(load)
+  return <><Refresh {...state} /><Feedback error={state.error} loading={!state.data} empty={state.data?.length === 0} />
+    {state.data && state.data.length > 0 && <div className="glass-panel table-scroll"><table><thead><tr><th>Instance / Workflow</th><th>Status</th><th>Created</th><th>Tasks completed</th><th>Last modified</th></tr></thead>
+      <tbody>{state.data.map(instance => <tr key={instance.id}><td><button className="text-button" onClick={() => open(instance.id)}>{instance.id}</button><div className="muted">{instance.workflow_def_id}</div></td><td><Badge status={instance.status} /></td><td>{date(instance.created_at_epoch_ms)}</td><td>{instance.completed_task_count} / {instance.total_task_count}</td><td>{date(instance.modified_at_epoch_ms)}</td></tr>)}</tbody></table></div>}
+  </>
+}
+function HumanInput({ api, report, task, complete, busy }: { api: Api; report: Report; task: Task; complete: () => void; busy: boolean }) {
+  const [input, setInput] = useState('')
+  const [format, setFormat] = useState('text')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
+  const [sent, setSent] = useState(false)
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setError('')
+    try {
+      const value: unknown = format === 'json' ? JSON.parse(input) : input
+      setSending(true)
+      await api.humanInput(report.instance_id, task.task_attempt_id, value)
+      setSent(true)
+      complete()
+    } catch (error) { setError(message(error)) }
+    finally { setSending(false) }
+  }
+  return <form className="input-form" onSubmit={submit}>
+    <h3>Human input · {task.task_attempt_id}</h3>
+    <p>{typeof task.status === 'object' ? task.status.InputNeeded.input_request : ''}</p>
+    {sent ? <p className="notice" role="status">Input submitted. Waiting for updated workflow state…</p> : <>
+      <label>Input format<select value={format} onChange={event => setFormat(event.target.value)}><option value="text">Plain text</option><option value="json">JSON</option></select></label>
+      <label>Response<textarea required rows={5} value={input} onChange={event => setInput(event.target.value)} placeholder={format === 'json' ? '{"approved": true}' : 'Enter your response'} /></label>
+      <button className="btn btn-primary" disabled={sending || busy || !input.trim() || report.status !== 'InputNeeded'}>{sending ? 'Submitting…' : 'Submit input'}</button>
+    </>}{error && <p className="notice error" role="alert">{error}</p>}
+  </form>
+}
+function InstanceEvents({ api, id }: { api: Api; id: string }) {
+  const load = useCallback((signal: AbortSignal) => api.events(id, signal), [api, id])
+  const state = usePolling(load, false)
+  const events = state.data
+  return <><Refresh {...state} poll={false} idle="Loaded when this tab opens" /><Feedback error={state.error} loading={!events} />
+    {events && <><h2 className="section-title">Event log <span className="muted">Newest first · {events.length} events</span></h2>
+      <div className="glass-panel event-log">{events.length === 0 && <p className="notice">No events recorded yet.</p>}{events.toReversed().map((record, index) => <details key={events.length - index} className="event"><summary><span className="muted">#{events.length - index} · {date(record.created_time)}</span><span>{record.event.type.replaceAll('_', ' ')}</span></summary><pre>{JSON.stringify(record.event, null, 2)}</pre></details>)}</div>
+    </>}
+  </>
+}
+function InstanceDiagram({ api, report }: { api: Api; report: Report }) {
+  const load = useCallback((signal: AbortSignal) => api.definition(report.workflow_def_id, signal), [api, report.workflow_def_id])
+  const state = usePolling(load, false)
+  const diagram = useMemo(() => {
+    if (!state.data) return undefined
+    try { return { ...diagramFromYaml(state.data, report.tasks), error: undefined } }
+    catch (error) { return { error: message(error) } }
+  }, [state.data, report.tasks])
+  return <><h2 className="section-title">Execution diagram</h2>
+    <p className="muted diagram-legend">Each step shows its latest attempt. Running steps are cyan, successful steps blue, failed steps red, and input requests amber. Arrows show data bindings.</p>
+    <section className="glass-panel panel"><Feedback error={state.error || diagram?.error} loading={state.data === undefined} />
+      {state.error && <button className="btn btn-secondary" onClick={state.refresh}>Retry loading diagram</button>}
+      {diagram && 'definition' in diagram && (diagram.definition.tasks.length ? <WorkflowDiagram source={diagram.source} /> : <p className="notice">This workflow has no tasks.</p>)}
+    </section>
+  </>
+}
+function InstanceDetails({ api, id, back }: { api: Api; id: string; back: () => void }) {
+  const [tab, setTab] = useState<'status' | 'events'>('status')
+  const load = useCallback((signal: AbortSignal) => api.report(id, signal), [api, id])
+  const state = usePolling(load, shouldPollInstance)
+  const [busy, setBusy] = useState(false)
+  const [actionError, setActionError] = useState('')
+  const [actionMessage, setActionMessage] = useState('')
+  const report = state.data
+  async function performAction(operation: () => Promise<unknown>, success: string) {
+    setBusy(true); setActionError(''); setActionMessage('')
+    try { await operation(); setActionMessage(success); state.refresh() }
+    catch (error) { setActionError(message(error)); state.refresh() }
+    finally { setBusy(false) }
+  }
+  function action(kind: 'pause' | 'resume') {
+    return performAction(() => api.action(id, kind), kind === 'pause' ? 'Workflow paused.' : 'Workflow queued to resume.')
+  }
+  return <><button className="text-button back" onClick={back}>← Back to instances</button>
+    <div className="instance-tabs" role="tablist" aria-label="Instance details">
+      {(['status', 'events'] as const).map(value => <button key={value} id={`instance-${value}-tab`} role="tab" aria-selected={tab === value} aria-controls={`instance-${value}-panel`} tabIndex={tab === value ? 0 : -1} className={`btn btn-secondary ${tab === value ? 'active' : ''}`} onClick={() => setTab(value)} onKeyDown={event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+        event.preventDefault()
+        const next = event.key === 'Home' ? 'status' : event.key === 'End' ? 'events' : value === 'status' ? 'events' : 'status'
+        setTab(next)
+        document.getElementById(`instance-${next}-tab`)?.focus()
+      }}>Instance {value === 'status' ? 'Status' : 'Events'}</button>)}
+    </div>
+    <div id="instance-status-panel" role="tabpanel" aria-labelledby="instance-status-tab" hidden={tab !== 'status'}>
+    <Refresh {...state} poll={shouldPollInstance(report)} />
+    <Feedback error={state.error} loading={!state.data} />
+    {report && <>
+      <section className="glass-panel detail-summary"><div><div className="eyebrow">{report.workflow_def_id}</div><h2>{report.instance_id}</h2><Badge status={report.status} /></div>
+        <div className="actions">{(['Pending', 'Running'] as Status[]).includes(report.status) && <button className="btn btn-secondary" disabled={busy} onClick={() => void action('pause')}>Pause workflow</button>}
+          {report.status === 'Paused' && <button className="btn btn-primary" disabled={busy} onClick={() => void action('resume')}>Resume workflow</button>}</div>
+      </section>
+      {actionError && <p className="notice error" role="alert">{actionError}</p>}{actionMessage && <p className="notice" role="status">{actionMessage}</p>}
+      {report.status === 'Paused' && <p className="notice">Running tasks may finish; further task execution waits until you resume.</p>}
+      <InstanceDiagram api={api} report={report} />
+      {report.tasks.filter(task => typeof task.status === 'object').map(task => <section className="glass-panel panel" key={task.task_attempt_id}><HumanInput api={api} report={report} task={task} busy={busy} complete={state.refresh} /></section>)}
+      <h2 className="section-title">Task attempts</h2><div className="glass-panel table-scroll"><table><thead><tr><th>Attempt</th><th>Status</th><th>Generation</th><th>Satisfaction</th><th>Actions</th></tr></thead><tbody>{report.tasks.map(task => <tr key={task.task_attempt_id}><td>{task.task_attempt_id}</td><td><Badge status={taskStatus(task)} /></td><td>{task.generation_index}</td><td>{task.satisfaction}</td><td>{report.status === 'Failed' && task.status === 'Failed' && <button className="btn btn-secondary" disabled={busy} aria-label={`Restart failed task ${task.task_attempt_id}`} onClick={() => void performAction(() => api.retryTask(id, task.task_attempt_id), `Task ${task.task_attempt_id} queued to restart.`)}>Restart task</button>}</td></tr>)}</tbody></table>{report.tasks.length === 0 && <p className="notice">No task attempts yet.</p>}</div>
+    </>}
+    </div>
+    <div id="instance-events-panel" role="tabpanel" aria-labelledby="instance-events-tab" hidden={tab !== 'events'}>{tab === 'events' && <InstanceEvents api={api} id={id} />}</div>
+  </>
+}
+function Settings({ connection, save }: { connection: Connection; save: (connection: Connection) => void }) {
+  const [host, setHost] = useState(connection.host)
+  const [apiKey, setApiKey] = useState(connection.apiKey)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  function submit(event: FormEvent) {
+    event.preventDefault(); setError(''); setSuccess('')
+    try {
+      const normalized = normalizeHost(host.trim())
+      localStorage.setItem('relayfold-api-host', normalized)
+      save({ host: normalized, apiKey: apiKey.trim() })
+      setHost(normalized); setSuccess('Connection settings saved. Open Workflows or Instances to connect.')
+    } catch (error) { setError(message(error)) }
+  }
+  return <form className="glass-panel panel settings" onSubmit={submit}><h2>Orchestrator connection</h2>
+    <p className="muted">Set the public API address as seen from the frontend server.</p>
+    <label>API host<input required value={host} onChange={event => setHost(event.target.value)} placeholder={defaultHost} /></label>
+    <p className="muted">Default: {defaultHost}. The host is saved in this browser.</p>
+    <label>API key (optional)<input type="password" autoComplete="off" value={apiKey} onChange={event => setApiKey(event.target.value)} /></label>
+    <p className="muted">Use a bearer API key when namespace authentication is enabled. The key is kept in memory and cleared on page reload.</p>
+    <button className="btn btn-primary">Save settings</button>{error && <p className="notice error" role="alert">{error}</p>}{success && <p className="notice" role="status">{success}</p>}
+  </form>
+}
+function App() {
+  const [page, setPage] = useState<'workflows' | 'functions' | 'instances' | 'settings'>('instances')
+  const [selectedWorkflow, setSelectedWorkflow] = useState<string | null>(null)
+  const [workflowTab, setWorkflowTab] = useState<'browse' | 'register'>('browse')
+  const [selected, setSelected] = useState<string | null>(null)
+  const [connection, setConnection] = useState<Connection>(() => ({ host: savedHost(), apiKey: '' }))
+  const api = useMemo(() => createApi(connection), [connection])
+  const title = page === 'workflows' ? workflowTab === 'register' ? 'Register workflow' : selectedWorkflow ? 'Workflow definition' : 'Workflows' : page === 'functions' ? 'Functions' : page === 'settings' ? 'Settings' : selected ? 'Instance details' : 'Instances'
+  return <div className="app-container"><div className="terminal-header"><span className="terminal-brand">[rf] RelayFold</span><span className="muted">workflow orchestrator / console</span></div><aside className="sidebar"><div className="nav-section-title">Navigation</div><nav className="nav-menu" aria-label="Main navigation">
+    {(['workflows', 'functions', 'instances', 'settings'] as const).map((value, index) => <button key={value} className={`nav-item ${page === value ? 'active' : ''}`} aria-current={page === value ? 'page' : undefined} onClick={() => { setPage(value); setSelectedWorkflow(null); setWorkflowTab('browse'); if (value !== 'instances') setSelected(null) }}><span className="nav-marker" aria-hidden="true">{page === value ? '>' : String(index + 1).padStart(2, '0')}</span>{value[0].toUpperCase() + value.slice(1)}</button>)}
+    </nav><div className="sidebar-host">Public API<br /><span>{connection.host}</span></div></aside>
+    <main className="main-content"><header className="page-header"><div><h1 className="page-title">{title}</h1><p className="page-subtitle">{page === 'workflows' ? 'Browse and register workflow definitions.' : page === 'functions' ? 'Browse and register reusable functions.' : page === 'settings' ? 'Configure your orchestrator connection.' : 'Monitor workflow execution and respond to input requests.'}</p></div></header>
+      {page === 'settings' ? <Settings connection={connection} save={setConnection} /> : <div key={connection.host + connection.apiKey}>
+        {page === 'workflows' ? <>
+          <DefinitionTabs section="workflows" tab={workflowTab} select={setWorkflowTab} />
+          <div id="workflows-browse-panel" role="tabpanel" aria-labelledby="workflows-browse-tab" hidden={workflowTab !== 'browse'}>
+            {workflowTab === 'browse' && (selectedWorkflow ? <WorkflowDetails key={selectedWorkflow} api={api} id={selectedWorkflow} back={() => setSelectedWorkflow(null)} openInstance={id => { setSelected(id); setPage('instances') }} /> : <Workflows api={api} open={setSelectedWorkflow} />)}
+          </div>
+          <div id="workflows-register-panel" role="tabpanel" aria-labelledby="workflows-register-tab" hidden={workflowTab !== 'register'}>
+            <RegisterDefinition kind="workflow" api={api} browse={() => { setSelectedWorkflow(null); setWorkflowTab('browse') }} />
+          </div>
+        </> : page === 'functions' ? <Functions api={api} /> : selected ? <InstanceDetails key={selected} api={api} id={selected} back={() => setSelected(null)} /> : <Instances api={api} open={setSelected} />}
+      </div>}
+    </main><footer className="terminal-footer"><span>RelayFold / {title.toLowerCase()}</span><span>Tab to navigate · Enter to activate</span></footer></div>
+}
+export default App

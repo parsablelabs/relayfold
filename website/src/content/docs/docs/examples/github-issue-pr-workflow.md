@@ -31,6 +31,10 @@ The token must be able to read the target repository issue and comments, push a 
 
 ## Inputs
 
+The workflow's `example_input` prefills the UI JSON trigger input with
+`repository: parsablelabs/relayfold` and `issue_number: 46`. Replace these with
+the repository and issue you want to implement before starting a run.
+
 The first task requires one input object with the issue identifiers:
 
 ```json

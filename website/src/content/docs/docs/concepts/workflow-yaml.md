@@ -11,6 +11,8 @@ format directly and stores the definition canonically as JSON.
 ```yaml
 id: example-workflow
 description: Summarize an input document.
+example_input:
+  document: "A short document to summarize."
 
 tasks: []
 
@@ -21,8 +23,16 @@ data_bindings: []
 | --- | --- | --- |
 | `id` | Yes | Workflow definition ID. IDs are normalized during registration. |
 | `description` | No | Human-readable workflow description used in workflow discovery lists. Defaults to an empty string. |
+| `example_input` | No | JSON-compatible example payload used to prefill the UI JSON trigger input. |
 | `tasks` | Yes | Task definitions that make up the workflow graph. |
 | `data_bindings` | Yes | Edges that pass outputs from source tasks to target task inputs. |
+
+The UI prefills **JSON trigger input** with `example_input` as formatted JSON when
+you open a workflow. Edit or clear it before choosing **Start workflow**. The
+input must still satisfy the entry task input schemas. Omit `example_input` or
+set it to `null` to leave the input empty. Objects, arrays, strings, numbers, and
+booleans are supported; write the payload as a YAML value, not a JSON string.
+This field is an example for the UI, not a default for API or scheduled runs.
 
 ## Task fields
 
