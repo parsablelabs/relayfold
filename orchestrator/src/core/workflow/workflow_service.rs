@@ -1023,6 +1023,7 @@ mod tests {
 
     fn workflow_def_with_task(id: &str, task_id: &str) -> WorkflowDef {
         WorkflowDef {
+            example_input: None,
             id: id.to_string(),
             description: String::new(),
             tasks: vec![TaskDef {
@@ -1385,6 +1386,7 @@ mod tests {
         let storage = Arc::new(MemoryStorage::new());
         let service = WorkflowService::new(storage.clone());
         let mut def = workflow_def("workflow1");
+        def.example_input = Some(json!({"repository": "example/repository"}));
         def.tasks[0].input_schemas = vec![json!({
             "type": "object",
             "required": ["repository"],
@@ -1415,6 +1417,22 @@ mod tests {
             .unwrap();
         assert_eq!(instance.trigger_input, Some(input));
         assert!(instance.tasks.is_empty());
+
+        let instance_id = service
+            .create_workflow_instance_for_def(
+                &crate::core::namespace::test_namespace(),
+                "workflow1",
+                WorkerHostId::new("test-host"),
+                None,
+            )
+            .await
+            .unwrap();
+        let instance = storage
+            .get_workflow_instance(&crate::core::namespace::test_namespace(), &instance_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(instance.trigger_input.is_none());
     }
 
     #[tokio::test]
@@ -1654,6 +1672,7 @@ mod tests {
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 WorkflowDef {
+                    example_input: None,
                     id: "workflow1".to_string(),
                     description: String::new(),
                     tasks: vec![agent_task_def("taska")],
@@ -1740,6 +1759,7 @@ mod tests {
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 WorkflowDef {
+                    example_input: None,
                     id: "workflow1".to_string(),
                     description: String::new(),
                     tasks: vec![agent_task_def("taska")],

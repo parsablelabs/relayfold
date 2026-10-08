@@ -50,6 +50,7 @@ async fn persists_and_reconstructs_workflow_state() {
     let function_def_id = format!("function{suffix}");
 
     let mut workflow_def = WorkflowDef {
+        example_input: None,
         id: workflow_def_id.clone(),
         description: "MySQL contract test".to_string(),
         tasks: vec![],

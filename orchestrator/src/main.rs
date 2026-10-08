@@ -1,6 +1,6 @@
+use orchestrator::core::scheduler::start_task_scheduler;
 use std::path::PathBuf;
 use std::sync::Arc;
-use orchestrator::core::scheduler::start_task_scheduler;
 use tokio::net::TcpListener;
 use tokio::time::{self, Duration};
 use tracing::{error, info};
@@ -79,7 +79,11 @@ async fn main() -> anyhow::Result<()> {
         worker_registry.clone(),
         task_dispatcher.clone(),
     );
-    let _ = start_task_scheduler(orchestrator.clone(), workflow_service.clone(), worker_registry.clone());
+    let _ = start_task_scheduler(
+        orchestrator.clone(),
+        workflow_service.clone(),
+        worker_registry.clone(),
+    );
 
     tokio::try_join!(
         axum::serve(public_listener, public_app),
