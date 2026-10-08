@@ -1,5 +1,7 @@
 id: simple-function-workflow
 description: Greet a user and return their normalized name with one inline Function task.
+example_input:
+  name: Ada
 tasks:
   - id: greeter
     kind:

@@ -162,6 +162,9 @@ pub struct DataBinding {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowDef {
     pub id: String,
+    /// Example trigger input for clients; never used as a runtime default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub example_input: Option<serde_json::Value>,
     #[serde(default)]
     pub description: String,
     pub tasks: Vec<TaskDef>,
@@ -187,6 +190,41 @@ pub struct StartupWorkflowDiscovery {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workflow_example_input_round_trips_json_values_and_omits_absent_examples() {
+        for example in [
+            serde_json::json!({"nested": [false, 0, "text"]}),
+            serde_json::json!([1, 2]),
+            serde_json::json!(false),
+            serde_json::json!(0),
+            serde_json::json!(""),
+            serde_json::Value::Null,
+        ] {
+            let value = serde_json::json!({
+                "id": "example", "tasks": [], "data_bindings": [],
+                "example_input": example,
+            });
+            let definition: WorkflowDef = serde_json::from_value(value).unwrap();
+            let serialized = serde_json::to_value(&definition).unwrap();
+            if example.is_null() {
+                assert!(serialized.get("example_input").is_none());
+            } else {
+                assert_eq!(serialized["example_input"], example);
+            }
+        }
+        let definition: WorkflowDef = serde_json::from_value(serde_json::json!({
+            "id": "example", "tasks": [], "data_bindings": [],
+        }))
+        .unwrap();
+        assert!(definition.example_input.is_none());
+        assert!(
+            serde_json::to_value(definition)
+                .unwrap()
+                .get("example_input")
+                .is_none()
+        );
+    }
 
     #[test]
     fn workflow_info_omits_storage_namespace_from_public_serialization() {

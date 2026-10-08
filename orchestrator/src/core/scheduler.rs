@@ -338,6 +338,7 @@ mod tests {
 
     fn workflow_def(id: &str) -> WorkflowDef {
         WorkflowDef {
+            example_input: None,
             id: id.to_string(),
             description: String::new(),
             tasks: vec![TaskDef {

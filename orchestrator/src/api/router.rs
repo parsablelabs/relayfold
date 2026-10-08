@@ -379,6 +379,7 @@ mod tests {
             .save_workflow_def(
                 &namespace_b,
                 WorkflowDef {
+                    example_input: None,
                     id: "shared-def".to_string(),
                     description: "namespace-b".to_string(),
                     tasks: vec![crate::core::task::TaskDef {

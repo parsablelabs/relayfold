@@ -779,6 +779,8 @@ mod tests {
 
     const YAML_WORKFLOW: &[u8] = br#"id: yaml-workflow
 description: From YAML
+example_input:
+  name: Ada
 tasks:
   - id: run
     kind:
@@ -928,6 +930,7 @@ data_bindings: []
         let storage = Arc::new(MemoryStorage::new());
         let state = app_state(storage.clone(), WorkerRegistry::new());
         let workflow_def = WorkflowDef {
+            example_input: None,
             id: "workflow-1".to_string(),
             description: String::new(),
             tasks: vec![],
@@ -985,6 +988,7 @@ data_bindings: []
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 WorkflowDef {
+                    example_input: None,
                     id: "workflow-1".to_string(),
                     description: "Example workflow".to_string(),
                     tasks: vec![],
@@ -1018,6 +1022,7 @@ data_bindings: []
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 WorkflowDef {
+                    example_input: None,
                     id: "workflow-1".to_string(),
                     description: "Example workflow".to_string(),
                     tasks: vec![crate::core::task::TaskDef {
@@ -1098,6 +1103,7 @@ data_bindings: []
 
         assert_eq!(workflow_def.id, "yaml-workflow");
         assert_eq!(workflow_def.description, "From YAML");
+        assert_eq!(workflow_def.example_input, Some(json!({"name": "Ada"})));
         assert_eq!(workflow_def.tasks[0].id, "run");
     }
 
@@ -1115,6 +1121,7 @@ data_bindings: []
         .unwrap();
 
         assert_eq!(workflow_def.id, "detected-workflow");
+        assert!(workflow_def.example_input.is_none());
     }
 
     #[test]
@@ -1168,6 +1175,7 @@ code: "export default async function run() { return {}; }"
             .unwrap();
         let response: Value = serde_yaml::from_slice(&body).unwrap();
         assert_eq!(response["id"], "yaml-workflow");
+        assert_eq!(response["example_input"], json!({"name": "Ada"}));
         assert!(response["tasks"][0]["kind"]["function"].is_object());
     }
 
@@ -1389,6 +1397,7 @@ code: "export default async function run() { return {}; }"
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 WorkflowDef {
+                    example_input: None,
                     id: "workflow-1".to_string(),
                     description: String::new(),
                     tasks: vec![crate::core::task::TaskDef {

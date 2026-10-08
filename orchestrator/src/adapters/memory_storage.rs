@@ -390,6 +390,7 @@ mod tests {
 
     fn workflow_def(description: &str) -> WorkflowDef {
         WorkflowDef {
+            example_input: None,
             id: "shared-def".to_string(),
             description: description.to_string(),
             tasks: vec![],
