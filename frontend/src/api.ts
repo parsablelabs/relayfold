@@ -37,7 +37,7 @@ export function createApi(connection: Connection, transport: typeof fetch = fetc
     })
     if (!response.ok) {
       const explanation = response.status === 401 ? 'Check your API key in Settings.'
-        : response.status === 409 ? path === '/workflow-def' ? 'This workflow already has instances and cannot be overwritten. Register it under a new ID.' : 'The workflow state changed or this action is no longer available. Refresh and try again.'
+        : response.status === 409 ? path.split('?')[0] === '/workflow-def' ? 'This workflow already has instances. Enable overwrite or register it under a new ID.' : path.split('?')[0] === '/function-def' ? 'This function already exists. Enable overwrite or register it under a new ID.' : 'The workflow state changed or this action is no longer available. Refresh and try again.'
         : response.status === 404 ? 'The workflow, function, or task could not be found.'
         : response.status === 503 ? 'No eligible worker is available. Start or reconnect a worker and try again.'
         : response.status === 502 ? 'Cannot reach the orchestrator. Check the host in Settings and ensure it is running.'
@@ -49,8 +49,8 @@ export function createApi(connection: Connection, transport: typeof fetch = fetc
   return {
     functions: (signal: AbortSignal) => request<{ function_defs: FunctionSummary[] }>('/function-def', signal),
     functionDefinition: (id: string, signal: AbortSignal) => request<FunctionDefinition>(`/function-def/${encodeURIComponent(id)}`, signal),
-    registerFunction: (definition: string) => request<{ id: string }>('/function-def', undefined, definition, 'json', 'yaml'),
-    registerWorkflow: (definition: string) => request<{ id: string }>('/workflow-def', undefined, definition, 'json', 'yaml'),
+    registerFunction: (definition: string, overwrite = false) => request<{ id: string }>(`/function-def${overwrite ? '?overwrite=true' : ''}`, undefined, definition, 'json', 'yaml'),
+    registerWorkflow: (definition: string, overwrite = false) => request<{ id: string }>(`/workflow-def${overwrite ? '?overwrite=true' : ''}`, undefined, definition, 'json', 'yaml'),
     startWorkflow: (id: string, input: unknown = null) => request<{ id: string }>(`/workflow-def/${encodeURIComponent(id)}`, undefined, input),
     definition: (id: string, signal: AbortSignal) => request<string>(`/workflow-def/${encodeURIComponent(id)}?format=yaml`, signal, undefined, 'text'),
     workflows: (signal: AbortSignal) => request<{ workflow_defs: Workflow[] }>('/workflow-def', signal),

@@ -299,6 +299,158 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn function_registration_overwrite_requires_explicit_true() {
+        let storage = Arc::new(MemoryStorage::new());
+        let namespace = crate::core::namespace::test_namespace();
+        let router = test_router(
+            storage.clone(),
+            Arc::new(MemoryWorkflowQueue::new(10)),
+            Arc::new(TestNamespaceResolver::with_global_namespace(
+                namespace.clone(),
+            )),
+        );
+        let original = json!({"id": "shared-function", "dependencies": [], "code": "original"});
+        let updated = json!({"id": "shared-function", "dependencies": [{"name": "lodash-es", "version": "4.17.21"}], "code": "updated"});
+        let (status, _) =
+            request(&router, Method::POST, "/function-def", None, Some(original)).await;
+        assert_eq!(status, StatusCode::OK);
+        for uri in ["/function-def", "/function-def?overwrite=false"] {
+            let (status, body) =
+                request(&router, Method::POST, uri, None, Some(updated.clone())).await;
+            assert_eq!(status, StatusCode::CONFLICT);
+            assert!(
+                serde_json::from_slice::<Value>(&body).unwrap()["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("overwrite=true")
+            );
+            let stored = storage
+                .get_function_def(&namespace, "shared-function")
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(stored.code, "original");
+            assert!(stored.dependencies.is_empty());
+        }
+        let (status, _) = request(
+            &router,
+            Method::POST,
+            "/function-def?overwrite=invalid",
+            None,
+            Some(updated.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let (status, body) = request(
+            &router,
+            Method::POST,
+            "/function-def?overwrite=true",
+            None,
+            Some(updated),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({"status": "created", "id": "shared-function"})
+        );
+        let stored = storage
+            .get_function_def(&namespace, "shared-function")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.code, "updated");
+        assert_eq!(stored.dependencies.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn workflow_registration_overwrite_requires_explicit_true() {
+        let storage = Arc::new(MemoryStorage::new());
+        let namespace = crate::core::namespace::test_namespace();
+        let router = test_router(
+            storage.clone(),
+            Arc::new(MemoryWorkflowQueue::new(10)),
+            Arc::new(TestNamespaceResolver::with_global_namespace(
+                namespace.clone(),
+            )),
+        );
+        let definition = json!({
+            "id": "shared-def", "description": "original",
+            "tasks": [], "data_bindings": []
+        });
+        let (status, _) = request(
+            &router,
+            Method::POST,
+            "/workflow-def",
+            None,
+            Some(definition.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let instance = workflow("existing-run", WorkflowStatus::Running, TaskStatus::Running);
+        storage
+            .save_workflow_instance(&namespace, 0, vec![], instance.clone())
+            .await
+            .unwrap();
+
+        let mut updated = definition;
+        updated["description"] = json!("updated");
+        for uri in ["/workflow-def", "/workflow-def?overwrite=false"] {
+            let (status, _) =
+                request(&router, Method::POST, uri, None, Some(updated.clone())).await;
+            assert_eq!(status, StatusCode::CONFLICT);
+            assert_eq!(
+                storage
+                    .get_workflow_def(&namespace, "shared-def")
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .description,
+                "original"
+            );
+        }
+        let (status, _) = request(
+            &router,
+            Method::POST,
+            "/workflow-def?overwrite=invalid",
+            None,
+            Some(updated.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let (status, body) = request(
+            &router,
+            Method::POST,
+            "/workflow-def?overwrite=true",
+            None,
+            Some(updated),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({"status": "created", "id": "shared-def"})
+        );
+        assert_eq!(
+            storage
+                .get_workflow_def(&namespace, "shared-def")
+                .await
+                .unwrap()
+                .unwrap()
+                .description,
+            "updated"
+        );
+        let stored_instance = storage
+            .get_workflow_instance(&namespace, "existing-run")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored_instance.status, instance.status);
+        assert_eq!(stored_instance.version, instance.version);
+        assert_eq!(stored_instance.tasks.len(), instance.tasks.len());
+    }
+
+    #[tokio::test]
     async fn public_router_uses_global_namespace_and_ignores_authorization() {
         let storage = Arc::new(MemoryStorage::new());
         let resolver = Arc::new(TestNamespaceResolver::with_global_namespace(

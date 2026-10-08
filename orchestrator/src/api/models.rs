@@ -8,6 +8,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Default, Deserialize)]
+pub struct DefinitionRegistrationQuery {
+    #[serde(default)]
+    pub(crate) overwrite: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
 pub struct WorkflowDefFormatQuery {
     #[serde(default)]
     pub(crate) format: DefinitionFormat,

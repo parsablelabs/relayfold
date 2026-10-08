@@ -69,8 +69,10 @@ Fields:
 
 In the UI, open **Functions → Register function**, paste a complete YAML or JSON
 definition, and click **Register function**. The page shows success or the API
-error and keeps your pasted definition available for edits. Registering an
-existing function ID replaces its code and dependencies.
+error and keeps your pasted definition available for edits. Existing function
+IDs are rejected by default. Enable **Overwrite existing function** to replace
+its code and dependencies. The toggle is off by default and sends `overwrite=true`
+when enabled. Workflows referencing the function may use the updated version.
 
 Choose **View registered functions** after success, or open the **Registered
 functions** tab, to browse the registry. The list shows function IDs. Click an ID

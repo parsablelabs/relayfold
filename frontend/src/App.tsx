@@ -119,6 +119,7 @@ function Functions({ api, selected, tab }: { api: Api; selected?: string; tab: D
 }
 function RegisterDefinition({ api, browse, kind }: { api: Api; browse: () => void; kind: 'workflow' | 'function' }) {
   const [definition, setDefinition] = useState('')
+  const [overwrite, setOverwrite] = useState(false)
   const [registering, setRegistering] = useState(false)
   const [error, setError] = useState('')
   const [registered, setRegistered] = useState('')
@@ -127,15 +128,19 @@ function RegisterDefinition({ api, browse, kind }: { api: Api; browse: () => voi
     if (registering || !definition.trim()) return
     setError(''); setRegistered(''); setRegistering(true)
     try {
-      const result = await (kind === 'workflow' ? api.registerWorkflow(definition) : api.registerFunction(definition))
+      const result = await (kind === 'workflow' ? api.registerWorkflow(definition, overwrite) : api.registerFunction(definition, overwrite))
       setRegistered(result.id)
     } catch (error) { setError(message(error)) }
     finally { setRegistering(false) }
   }
   return <form className="glass-panel panel input-form" onSubmit={submit}>
     <h2>Register {kind}</h2>
-    <p className="muted">Paste a complete YAML or JSON {kind} definition. {kind === 'workflow' ? 'You can update an existing definition until its first run; after that, use a new ID.' : 'Registering an existing function ID replaces its code and dependencies.'}</p>
+    <p className="muted">Paste a complete YAML or JSON {kind} definition. {kind === 'workflow' ? 'You can update an existing definition until its first run; after that, enable overwrite or use a new ID.' : 'To replace an existing function, enable overwrite or use a new ID.'}</p>
     <label>{kind === 'workflow' ? 'Workflow' : 'Function'} definition<textarea className="workflow-definition-input" rows={24} required spellCheck={false} value={definition} disabled={registering} aria-describedby={`${kind}-registration-feedback`} onChange={event => { setDefinition(event.target.value); setError(''); setRegistered('') }} placeholder={kind === 'workflow' ? 'id: my-workflow\ndescription: Describe your workflow.\nexample_input:\n  name: Ada\ntasks: []\ndata_bindings: []' : 'id: format.hello\ndependencies: []\ncode: |\n  export default async function run({ inputs }) {\n    return { response: inputs[0] };\n  }'} /></label>
+    <div>
+      <label className="checkbox-label"><input type="checkbox" checked={overwrite} disabled={registering} aria-describedby={`${kind}-overwrite-help`} onChange={event => { setOverwrite(event.target.checked); setError(''); setRegistered('') }} />Overwrite existing {kind}</label>
+      <p id={`${kind}-overwrite-help`} className="muted">{kind === 'workflow' ? 'Warning: Replacing this definition may affect currently active workflows.' : 'Warning: Replacing this function may affect currently active workflows that reference it.'}</p>
+    </div>
     <button className="btn btn-primary" disabled={registering || !definition.trim()}>{registering ? 'Registering…' : `Register ${kind}`}</button>
     <div id={`${kind}-registration-feedback`} aria-live="polite">
       {error && <p className="notice error" role="alert">{error}</p>}

@@ -205,14 +205,20 @@ The supported values are `json` and `yaml`. YAML responses use
 Request`.
 
 You can overwrite a registered definition while it has no workflow instances.
-After any instance has been created, regardless of its state, the definition is
-immutable and an overwrite returns `409 Conflict`:
+After any instance has been created, regardless of its state, an overwrite
+returns `409 Conflict` unless you pass `overwrite=true`:
 
 ```json
 {
-  "error": "workflow definition hello-workflow already has workflow instances and cannot be overwritten; register a new ID, for example hello-workflow_v2"
+  "error": "workflow definition hello-workflow already has workflow instances and cannot be overwritten; register under a new ID, for example hello-workflow_v2"
 }
 ```
+
+To replace the definition even when it has existing runs, use
+`POST /workflow-def?overwrite=true` with the updated JSON or YAML body.
+Omitting `overwrite` or passing `overwrite=false` preserves the conflict check.
+Existing run records are retained. Active runs read the replacement definition
+when they next load it, so changing task IDs or bindings can affect those runs.
 
 RelayFold does not enforce a versioning scheme. Suffixes such as `_v2` are a
 suggested convention for choosing a new definition ID.
@@ -266,6 +272,18 @@ definitions. For example, register a YAML artifact directly with:
 curl -sS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @function.yaml
 ```
+
+Registering an existing function ID in the same namespace returns `409 Conflict`
+unless you pass `overwrite=true`. Omitting the flag or passing `overwrite=false`
+preserves the existing definition. To replace its code and dependencies:
+
+```bash
+curl -sS -X POST "$RELAYFOLD_URL/function-def?overwrite=true" \
+  --data-binary @function.yaml
+```
+
+Workflows referencing the function may use the updated version. Register under a
+new ID and update selected workflow references to limit which workflows change.
 
 Delete a reusable function definition:
 

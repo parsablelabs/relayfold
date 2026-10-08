@@ -318,7 +318,7 @@ mod tests {
 
         for workflow_def_id in workflow_def_ids {
             workflow_service
-                .create_workflow_def(&namespace, workflow_def(workflow_def_id))
+                .create_workflow_def(&namespace, workflow_def(workflow_def_id), false)
                 .await
                 .unwrap();
         }

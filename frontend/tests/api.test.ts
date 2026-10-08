@@ -147,7 +147,39 @@ test('registers complete YAML and JSON definitions without wrapping the pasted t
   assert.deepEqual(bodies, definitions)
 })
 
-test('registration explains immutable IDs and preserves definition errors from the API', async () => {
+test('workflow registration only requests overwrite when enabled', async () => {
+  const paths: string[] = []
+  const definition = 'id: example\ntasks: []\ndata_bindings: []'
+  const api = createApi({ host: 'localhost:3000', apiKey: '' }, async (path, options) => {
+    paths.push(String(path))
+    assert.equal(options?.method, 'POST')
+    assert.equal(options?.body, definition)
+    return Response.json({ status: 'created', id: 'example' })
+  })
+  await api.registerWorkflow(definition)
+  await api.registerWorkflow(definition, true)
+  await api.registerWorkflow(definition, false)
+  assert.deepEqual(paths, ['/api/workflow-def', '/api/workflow-def?overwrite=true', '/api/workflow-def'])
+})
+
+test('function registration only requests overwrite when enabled and explains conflicts', async () => {
+  const paths: string[] = []
+  const definition = 'id: example\ndependencies: []\ncode: updated'
+  const api = createApi({ host: 'localhost:3000', apiKey: '' }, async (path, options) => {
+    paths.push(String(path))
+    assert.equal(options?.method, 'POST')
+    assert.equal(options?.body, definition)
+    return Response.json({ status: 'created', id: 'example' })
+  })
+  await api.registerFunction(definition)
+  await api.registerFunction(definition, true)
+  await api.registerFunction(definition, false)
+  assert.deepEqual(paths, ['/api/function-def', '/api/function-def?overwrite=true', '/api/function-def'])
+  const conflict = createApi({ host: 'localhost:3000', apiKey: '' }, async () => new Response('', { status: 409 }))
+  await assert.rejects(conflict.registerFunction(definition), /function already exists.*Enable overwrite/)
+})
+
+test('registration explains overwrite and preserves definition errors from the API', async () => {
   const conflict = createApi({ host: 'localhost:3000', apiKey: '' }, async () => new Response('', { status: 409 }))
   await assert.rejects(conflict.registerWorkflow('id: existing'), /already has instances.*new ID/)
   const invalid = createApi({ host: 'localhost:3000', apiKey: '' }, async () => Response.json({ error: 'missing field `tasks`' }, { status: 400 }))

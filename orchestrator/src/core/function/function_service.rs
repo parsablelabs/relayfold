@@ -33,7 +33,20 @@ impl FunctionService {
         &self,
         namespace: &Namespace,
         def: FunctionDef,
+        overwrite: bool,
     ) -> anyhow::Result<()> {
+        if !overwrite
+            && self
+                .storage
+                .get_function_def(namespace, &def.id)
+                .await?
+                .is_some()
+        {
+            anyhow::bail!(
+                "function definition {} already exists and cannot be overwritten; pass overwrite=true or register under a new ID",
+                def.id
+            );
+        }
         self.storage.save_function_def(namespace, def).await?;
         Ok(())
     }
@@ -99,10 +112,30 @@ mod tests {
                             dependencies: vec![],
                             code: code.to_string(),
                         },
+                        false,
                     )
                     .await
                     .unwrap();
             }
+            let replacement = FunctionDef {
+                id: "z-last".to_string(),
+                dependencies: vec![],
+                code: "rejected".to_string(),
+            };
+            let error = service
+                .create_function_def(&first, replacement, false)
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("cannot be overwritten"));
+            assert_eq!(
+                service
+                    .get_function_def(&first, "z-last")
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .code,
+                "old"
+            );
             service
                 .create_function_def(
                     &first,
@@ -114,6 +147,7 @@ mod tests {
                         }],
                         code: "updated".to_string(),
                     },
+                    true,
                 )
                 .await
                 .unwrap();

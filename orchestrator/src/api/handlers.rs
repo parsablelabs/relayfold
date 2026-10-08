@@ -9,10 +9,10 @@ use std::time::Duration;
 use tracing::{error, info};
 
 use crate::api::models::{
-    DefinitionFormat, InvokeTaskRequest, RetryTaskQuery, SubmitHumanInputRequest,
-    WorkerClaimRequest, WorkerRegistrationRequest, WorkerResponse, WorkflowDefFormatQuery,
-    WorkflowDefList, WorkflowEventListQuery, WorkflowEvents, WorkflowList, WorkflowListQuery,
-    WorkflowQueueStatus,
+    DefinitionFormat, DefinitionRegistrationQuery, InvokeTaskRequest, RetryTaskQuery,
+    SubmitHumanInputRequest, WorkerClaimRequest, WorkerRegistrationRequest, WorkerResponse,
+    WorkflowDefFormatQuery, WorkflowDefList, WorkflowEventListQuery, WorkflowEvents, WorkflowList,
+    WorkflowListQuery, WorkflowQueueStatus,
 };
 use crate::core::function::models::FunctionDef;
 use crate::core::workflow::models::{WorkflowDef, WorkflowStatus};
@@ -36,6 +36,7 @@ pub async fn not_found() -> StatusCode {
 pub async fn create_workflow_def(
     State(state): State<PublicAppState>,
     namespace: RequestNamespace,
+    Query(query): Query<DefinitionRegistrationQuery>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
@@ -44,7 +45,7 @@ pub async fn create_workflow_def(
 
     state
         .workflow_service
-        .create_workflow_def(&namespace, workflow_def)
+        .create_workflow_def(&namespace, workflow_def, query.overwrite)
         .await
         .map_err(|error| {
             let message = error.to_string();
@@ -196,6 +197,7 @@ pub async fn get_function_def(
 pub async fn create_function_def(
     State(state): State<PublicAppState>,
     namespace: RequestNamespace,
+    Query(query): Query<DefinitionRegistrationQuery>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
@@ -204,13 +206,19 @@ pub async fn create_function_def(
 
     state
         .function_service
-        .create_function_def(&namespace, function_def)
+        .create_function_def(&namespace, function_def, query.overwrite)
         .await
-        .map_err(|_| {
-            definition_request_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to register function definition",
-            )
+        .map_err(|error| {
+            let message = error.to_string();
+            if message.contains("cannot be overwritten") {
+                definition_request_error(StatusCode::CONFLICT, &message)
+            } else {
+                error!(%error, "failed to register function definition");
+                definition_request_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to register function definition",
+                )
+            }
         })?;
     info!(
         id = %function_def_id,
@@ -975,6 +983,7 @@ data_bindings: []
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 workflow_def.clone(),
+                false,
             )
             .await
             .unwrap();
@@ -1001,10 +1010,15 @@ data_bindings: []
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
         let body = Bytes::from(serde_json::to_vec(&workflow_def).unwrap());
-        let (status, Json(response)) =
-            create_workflow_def(State(state), request_namespace(), headers, body)
-                .await
-                .unwrap_err();
+        let (status, Json(response)) = create_workflow_def(
+            State(state),
+            request_namespace(),
+            Query(DefinitionRegistrationQuery::default()),
+            headers,
+            body,
+        )
+        .await
+        .unwrap_err();
 
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(
@@ -1028,6 +1042,7 @@ data_bindings: []
                     tasks: vec![],
                     data_bindings: vec![],
                 },
+                false,
             )
             .await
             .unwrap();
@@ -1080,6 +1095,7 @@ data_bindings: []
                     }],
                     data_bindings: vec![],
                 },
+                false,
             )
             .await
             .unwrap();
@@ -1185,6 +1201,7 @@ code: "export default async function run() { return {}; }"
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 parse_yaml_definition(YAML_WORKFLOW).unwrap(),
+                false,
             )
             .await
             .unwrap();
@@ -1455,6 +1472,7 @@ code: "export default async function run() { return {}; }"
                     }],
                     data_bindings: vec![],
                 },
+                false,
             )
             .await
             .unwrap();

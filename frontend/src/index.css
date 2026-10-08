@@ -87,6 +87,8 @@ tbody tr:hover { background: #78a5ff05; }
 .status-failed { color: #ffabab; }
 .status-paused, .status-inputneeded { color: #ecc77e; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.checkbox-label { flex-direction: row; align-items: center; gap: 8px; }
+.checkbox-label input { margin: 0; }
 input, select, textarea { background: var(--color-bg-base); border: 1px solid var(--color-border); padding: 8px 10px; color: var(--color-text-main); border-radius: 0; min-width: 0; }
 textarea { resize: vertical; width: 100%; }
 .settings { max-width: 720px; }

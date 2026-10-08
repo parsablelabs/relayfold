@@ -57,8 +57,9 @@ In the UI, open **Workflows → Register workflow**. Paste a complete YAML or JS
 definition into the large **Workflow definition** box and click **Register workflow**.
 The page confirms registration or shows the API error while keeping your pasted
 definition available to edit. Choose **View registered workflows** after success
-to find the workflow and start a run. Definitions with existing runs require a
-new ID when registering an update.
+to find the workflow and start a run. Enable **Overwrite existing workflow** to
+replace a definition with existing runs. The toggle is off by default and sends
+`overwrite=true` when enabled. Active runs may use the updated definition.
 
 Register a one-task Function workflow:
 
@@ -116,9 +117,17 @@ curl -sS -X POST "$RELAYFOLD_URL/workflow-def" \
 
 You can register an updated definition under the same ID until its first
 workflow instance is created. After an instance exists in any state, including
-`Completed` or `Failed`, RelayFold keeps the definition immutable and rejects an
-overwrite with `409 Conflict`. Register the update under a new ID instead, for
-example `hello-workflow_v2`.
+`Completed` or `Failed`, RelayFold rejects an overwrite with `409 Conflict` by
+default. Register the update under a new ID, for example `hello-workflow_v2`, or
+explicitly allow replacement:
+
+```bash
+curl -sS -X POST "$RELAYFOLD_URL/workflow-def?overwrite=true" \
+  --data-binary @hello-workflow.yaml
+```
+
+Existing run records are retained. Active runs read the replacement definition
+when they next load it, so changing task IDs or bindings can affect those runs.
 
 The `_v2` suffix is only a suggested naming convention. RelayFold does not require
 or interpret workflow definition versions.

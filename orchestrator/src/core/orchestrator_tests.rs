@@ -208,6 +208,7 @@ async fn execute_workflow_task_isolated_finds_registered_task() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow1", vec![task("taska")]),
+            false,
         )
         .await
         .unwrap();
@@ -235,6 +236,7 @@ async fn execute_workflow_task_isolated_scopes_task_lookup_to_workflow_def() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow1", vec![task("taska")]),
+            false,
         )
         .await
         .unwrap();
@@ -242,6 +244,7 @@ async fn execute_workflow_task_isolated_scopes_task_lookup_to_workflow_def() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow2", vec![task("taska")]),
+            false,
         )
         .await
         .unwrap();
@@ -273,6 +276,7 @@ async fn execute_workflow_task_isolated_resolves_registered_function_ref() {
                 dependencies: vec![],
                 code: "export default async function run() { return {}; }".to_string(),
             },
+            false,
         )
         .await
         .unwrap();
@@ -280,6 +284,7 @@ async fn execute_workflow_task_isolated_resolves_registered_function_ref() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow1", vec![function_ref_task("taska", "functiona")]),
+            false,
         )
         .await
         .unwrap();
@@ -315,6 +320,7 @@ async fn execute_workflow_task_isolated_uses_generated_isolated_execution_id() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow1", vec![task("taska")]),
+            false,
         )
         .await
         .unwrap();
@@ -354,6 +360,7 @@ async fn execute_workflow_task_isolated_errors_for_missing_function_ref() {
                 "workflow1",
                 vec![function_ref_task("taska", "missingfunction")],
             ),
+            false,
         )
         .await
         .unwrap();
@@ -445,6 +452,7 @@ async fn isolated_workflow_task_execution_does_not_require_scheduler() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow1", vec![task("taska")]),
+            false,
         )
         .await
         .unwrap();
@@ -488,7 +496,11 @@ async fn create_workflow_def_accepts_missing_input_schemas() {
     .unwrap();
 
     workflow_service
-        .create_workflow_def(&crate::core::namespace::test_namespace(), workflow_def)
+        .create_workflow_def(
+            &crate::core::namespace::test_namespace(),
+            workflow_def,
+            false,
+        )
         .await
         .unwrap();
 
@@ -527,7 +539,11 @@ async fn workflow_without_control_verifier_deserializes_and_executes() {
     assert!(workflow_def.tasks[0].control.is_none());
 
     workflow_service
-        .create_workflow_def(&crate::core::namespace::test_namespace(), workflow_def)
+        .create_workflow_def(
+            &crate::core::namespace::test_namespace(),
+            workflow_def,
+            false,
+        )
         .await
         .unwrap();
     let instance_id = workflow_service
@@ -569,6 +585,7 @@ async fn get_task_result_resolves_logical_task_id_to_generation_one() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow1", vec![task("taska")]),
+            false,
         )
         .await
         .unwrap();
@@ -621,6 +638,7 @@ async fn list_task_results_returns_materialized_attempts() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow1", vec![task("taska")]),
+            false,
         )
         .await
         .unwrap();
@@ -683,6 +701,7 @@ async fn verifier_control_accepts_function_task_and_injects_decision_schema() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow1", vec![verifier]),
+            false,
         )
         .await
         .unwrap();
@@ -712,6 +731,7 @@ async fn verifier_control_rejects_user_output_schema() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow1", vec![verifier]),
+            false,
         )
         .await
         .unwrap_err();
@@ -747,6 +767,7 @@ async fn create_workflow_def_normalizes_workflow_def_task_def_and_binding_ids() 
                     target_task_id: "Task-B".to_string(),
                 }],
             },
+            false,
         )
         .await
         .unwrap();
@@ -779,6 +800,7 @@ async fn create_workflow_def_rejects_invalid_identifier_characters() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow.1", vec![task("taska")]),
+            false,
         )
         .await
         .unwrap_err();
@@ -790,6 +812,7 @@ async fn create_workflow_def_rejects_invalid_identifier_characters() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow1", vec![task("task a")]),
+            false,
         )
         .await
         .unwrap_err();
@@ -805,6 +828,7 @@ async fn create_workflow_def_rejects_invalid_identifier_characters() {
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
             workflow("workflow1", vec![task_with_workspace]),
+            false,
         )
         .await
         .unwrap_err();
@@ -841,6 +865,7 @@ async fn verifier_control_rejects_invalid_rerun_from_task_id_values() {
                     target_task_id: "verify".to_string(),
                 }],
             },
+            false,
         )
         .await
         .unwrap_err();
@@ -872,6 +897,7 @@ async fn verifier_control_rejects_invalid_rerun_from_task_id_values() {
                     target_task_id: "taskb".to_string(),
                 }],
             },
+            false,
         )
         .await
         .unwrap_err();
@@ -903,6 +929,7 @@ async fn verifier_control_rejects_invalid_rerun_from_task_id_values() {
                     target_task_id: "verify".to_string(),
                 }],
             },
+            false,
         )
         .await
         .unwrap_err();
@@ -958,6 +985,7 @@ async fn verifier_control_rejects_overlapping_loop_slices() {
                     },
                 ],
             },
+            false,
         )
         .await
         .unwrap_err();

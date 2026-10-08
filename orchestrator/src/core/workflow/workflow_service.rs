@@ -37,13 +37,15 @@ impl WorkflowService {
         &self,
         namespace: &Namespace,
         def: WorkflowDef,
+        overwrite: bool,
     ) -> anyhow::Result<()> {
         let def = validate_and_normalize_workflow_def(def)?;
-        if self
-            .storage
-            .get_workflow_def(namespace, &def.id)
-            .await?
-            .is_some()
+        if !overwrite
+            && self
+                .storage
+                .get_workflow_def(namespace, &def.id)
+                .await?
+                .is_some()
         {
             let existing_instances = self
                 .storage
@@ -1074,6 +1076,7 @@ mod tests {
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 workflow_def_with_task("workflow1", "taska"),
+                false,
             )
             .await
             .unwrap();
@@ -1081,6 +1084,7 @@ mod tests {
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 workflow_def_with_task("workflow1", "taskb"),
+                false,
             )
             .await
             .unwrap();
@@ -1102,6 +1106,7 @@ mod tests {
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 workflow_def("workflow1"),
+                false,
             )
             .await
             .unwrap();
@@ -1119,6 +1124,7 @@ mod tests {
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 workflow_def_with_task("workflow1", "taskb"),
+                false,
             )
             .await
             .unwrap_err();
@@ -1155,6 +1161,7 @@ mod tests {
                 .create_workflow_def(
                     &crate::core::namespace::test_namespace(),
                     workflow_def("workflow1"),
+                    false,
                 )
                 .await
                 .unwrap();
@@ -1181,6 +1188,7 @@ mod tests {
                 .create_workflow_def(
                     &crate::core::namespace::test_namespace(),
                     workflow_def_with_task("workflow1", "taskb"),
+                    false,
                 )
                 .await
                 .unwrap_err();
@@ -1339,6 +1347,7 @@ mod tests {
             .create_workflow_def(
                 &crate::core::namespace::test_namespace(),
                 workflow_def("workflow1"),
+                false,
             )
             .await
             .unwrap();
@@ -1395,7 +1404,7 @@ mod tests {
             }
         })];
         service
-            .create_workflow_def(&crate::core::namespace::test_namespace(), def)
+            .create_workflow_def(&crate::core::namespace::test_namespace(), def, false)
             .await
             .unwrap();
 
@@ -1597,11 +1606,15 @@ mod tests {
         let mut never_invoked = workflow_def("neverinvoked");
         never_invoked.description = "Ready to run".to_string();
         service
-            .create_workflow_def(&crate::core::namespace::test_namespace(), invoked)
+            .create_workflow_def(&crate::core::namespace::test_namespace(), invoked, false)
             .await
             .unwrap();
         service
-            .create_workflow_def(&crate::core::namespace::test_namespace(), never_invoked)
+            .create_workflow_def(
+                &crate::core::namespace::test_namespace(),
+                never_invoked,
+                false,
+            )
             .await
             .unwrap();
 
@@ -1678,6 +1691,7 @@ mod tests {
                     tasks: vec![agent_task_def("taska")],
                     data_bindings: vec![],
                 },
+                false,
             )
             .await
             .unwrap();
@@ -1765,6 +1779,7 @@ mod tests {
                     tasks: vec![agent_task_def("taska")],
                     data_bindings: vec![],
                 },
+                false,
             )
             .await
             .unwrap();
