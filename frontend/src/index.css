@@ -54,8 +54,8 @@ button:disabled { opacity: .5; cursor: default; }
 .text-button { background: none; border: none; color: var(--color-primary); text-align: left; overflow-wrap: anywhere; }
 .text-button:hover { text-decoration: underline; }
 .back { margin-bottom: 16px; }
-.instance-tabs { display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 16px; }
-.instance-tabs .active { color: var(--color-primary); border-color: var(--color-primary); background: #78a5ff14; }
+.instance-tabs, .section-tabs { display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 16px; }
+.instance-tabs .active, .section-tabs .active { color: var(--color-primary); border-color: var(--color-primary); background: #78a5ff14; }
 .notice { padding: 12px; border: 1px solid var(--color-border); margin: 12px 0; color: var(--color-text-muted); overflow-wrap: anywhere; }
 .error { color: #ffabab; background: #ff80800a; border-color: #88504f; }
 .workflow-grid { display: flex; flex-direction: column; gap: 10px; }
@@ -104,6 +104,7 @@ pre { font-family: inherit; white-space: pre-wrap; overflow-wrap: anywhere; font
 .trigger-input-grid .muted { margin-top: 8px; }
 .trigger-schemas { display: flex; flex-direction: column; gap: 12px; }
 .trigger-schemas textarea { color: var(--color-text-muted); }
+.workflow-definition-input { min-height: 50vh; tab-size: 2; }
 #trigger-validation ul { padding-left: 28px; }
 @media (max-width: 900px) {
   .app-container { grid-template-columns: 176px minmax(0, 1fr); }

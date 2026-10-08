@@ -2,6 +2,8 @@ export const statuses = ['Pending', 'Running', 'Paused', 'InputNeeded', 'Complet
 export type Status = typeof statuses[number]
 export type Connection = { host: string; apiKey: string }
 export type Workflow = { id: string; description: string; created_at_epoch_ms: number; last_invoked_at_epoch_ms: number | null }
+export type FunctionSummary = { id: string }
+export type FunctionDefinition = { id: string; dependencies: { name: string; version: string }[]; code: string }
 export type Instance = { id: string; workflow_def_id: string; status: Status; created_at_epoch_ms: number | null; modified_at_epoch_ms: number; completed_at_epoch_ms: number | null; completed_task_count: number; total_task_count: number }
 export type Task = { task_attempt_id: string; task_def_id: string; generation_index: number; satisfaction: string; status: Exclude<Status, 'Paused' | 'InputNeeded'> | { InputNeeded: { input_request: string } } }
 export type Report = { instance_id: string; workflow_def_id: string; status: Status; tasks: Task[]; verifier_states?: unknown[] }
@@ -22,21 +24,21 @@ export function newestFirst(instances: Instance[]): Instance[] {
 }
 
 export function createApi(connection: Connection, transport: typeof fetch = fetch) {
-  async function request<T>(path: string, signal?: AbortSignal, body?: unknown, format: 'json' | 'text' = 'json'): Promise<T> {
+  async function request<T>(path: string, signal?: AbortSignal, body?: unknown, format: 'json' | 'text' = 'json', bodyFormat: 'json' | 'yaml' = 'json'): Promise<T> {
     const response = await transport(`/api${path}`, {
       method: body === undefined ? 'GET' : 'POST',
       signal,
       headers: {
         'X-RelayFold-Host': normalizeHost(connection.host),
         ...(connection.apiKey ? { Authorization: `Bearer ${connection.apiKey}` } : {}),
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(body === undefined ? {} : { 'Content-Type': bodyFormat === 'yaml' ? 'application/yaml' : 'application/json' }),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(body === undefined ? {} : { body: bodyFormat === 'yaml' ? String(body) : JSON.stringify(body) }),
     })
     if (!response.ok) {
       const explanation = response.status === 401 ? 'Check your API key in Settings.'
-        : response.status === 409 ? 'The workflow state changed or this action is no longer available. Refresh and try again.'
-        : response.status === 404 ? 'The workflow or task could not be found.'
+        : response.status === 409 ? path === '/workflow-def' ? 'This workflow already has instances and cannot be overwritten. Register it under a new ID.' : 'The workflow state changed or this action is no longer available. Refresh and try again.'
+        : response.status === 404 ? 'The workflow, function, or task could not be found.'
         : response.status === 503 ? 'No eligible worker is available. Start or reconnect a worker and try again.'
         : response.status === 502 ? 'Cannot reach the orchestrator. Check the host in Settings and ensure it is running.'
         : await response.text()
@@ -45,6 +47,10 @@ export function createApi(connection: Connection, transport: typeof fetch = fetc
     return (format === 'text' ? response.text() : response.json()) as Promise<T>
   }
   return {
+    functions: (signal: AbortSignal) => request<{ function_defs: FunctionSummary[] }>('/function-def', signal),
+    functionDefinition: (id: string, signal: AbortSignal) => request<FunctionDefinition>(`/function-def/${encodeURIComponent(id)}`, signal),
+    registerFunction: (definition: string) => request<{ id: string }>('/function-def', undefined, definition, 'json', 'yaml'),
+    registerWorkflow: (definition: string) => request<{ id: string }>('/workflow-def', undefined, definition, 'json', 'yaml'),
     startWorkflow: (id: string, input: unknown = null) => request<{ id: string }>(`/workflow-def/${encodeURIComponent(id)}`, undefined, input),
     definition: (id: string, signal: AbortSignal) => request<string>(`/workflow-def/${encodeURIComponent(id)}?format=yaml`, signal, undefined, 'text'),
     workflows: (signal: AbortSignal) => request<{ workflow_defs: Workflow[] }>('/workflow-def', signal),

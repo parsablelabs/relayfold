@@ -130,3 +130,69 @@ test('explains missing workers when starting a workflow fails', async () => {
   const api = createApi({ host: 'localhost:3000', apiKey: '' }, async () => new Response('', { status: 503 }))
   await assert.rejects(api.startWorkflow('example'), /No eligible worker is available/)
 })
+
+test('registers complete YAML and JSON definitions without wrapping the pasted text', async () => {
+  const definitions = ['id: example\nexample_input:\n  name: Ada\ntasks: []\ndata_bindings: []\n', '{"id":"example","tasks":[],"data_bindings":[]}']
+  const bodies: unknown[] = []
+  const api = createApi({ host: 'localhost:3000', apiKey: 'key' }, async (path, options) => {
+    assert.equal(String(path), '/api/workflow-def')
+    assert.equal(options?.method, 'POST')
+    assert.equal(new Headers(options.headers).get('Content-Type'), 'application/yaml')
+    assert.equal(new Headers(options.headers).get('Authorization'), 'Bearer key')
+    assert.equal(new Headers(options.headers).get('X-RelayFold-Host'), 'http://localhost:3000')
+    bodies.push(options.body)
+    return Response.json({ status: 'created', id: 'example' })
+  })
+  for (const definition of definitions) assert.equal((await api.registerWorkflow(definition)).id, 'example')
+  assert.deepEqual(bodies, definitions)
+})
+
+test('registration explains immutable IDs and preserves definition errors from the API', async () => {
+  const conflict = createApi({ host: 'localhost:3000', apiKey: '' }, async () => new Response('', { status: 409 }))
+  await assert.rejects(conflict.registerWorkflow('id: existing'), /already has instances.*new ID/)
+  const invalid = createApi({ host: 'localhost:3000', apiKey: '' }, async () => Response.json({ error: 'missing field `tasks`' }, { status: 400 }))
+  await assert.rejects(invalid.registerWorkflow('id: invalid'), /400.*missing field `tasks`/)
+})
+
+test('lists lightweight function summaries and forwards cancellation', async () => {
+  const controller = new AbortController()
+  const definition = { id: 'format.hello' }
+  const api = createApi({ host: 'localhost:3000', apiKey: 'key' }, async (path, options) => {
+    assert.equal(String(path), '/api/function-def')
+    assert.equal(options?.method, 'GET')
+    assert.equal(options.signal, controller.signal)
+    assert.equal(new Headers(options.headers).get('Authorization'), 'Bearer key')
+    return Response.json({ function_defs: [definition] })
+  })
+  assert.deepEqual(await api.functions(controller.signal), { function_defs: [definition] })
+})
+
+test('registers function YAML and JSON as raw definitions', async () => {
+  for (const definition of ['id: format.hello\ndependencies: []\ncode: |\n  export default async function run() {}\n', '{"id":"format.hello","dependencies":[],"code":"export default async function run() {}"}']) {
+    const api = createApi({ host: 'localhost:3000', apiKey: 'key' }, async (path, options) => {
+      assert.equal(String(path), '/api/function-def')
+      assert.equal(options?.method, 'POST')
+      assert.equal(new Headers(options.headers).get('Content-Type'), 'application/yaml')
+      assert.equal(new Headers(options.headers).get('Authorization'), 'Bearer key')
+      assert.equal(options.body, definition)
+      return Response.json({ status: 'created', id: 'format.hello' })
+    })
+    assert.equal((await api.registerFunction(definition)).id, 'format.hello')
+  }
+})
+
+
+test('fetches a complete function definition with an encoded ID and reports missing functions', async () => {
+  const controller = new AbortController()
+  const definition = { id: 'format/hello', dependencies: [{ name: 'lodash-es', version: '4.17.21' }], code: 'export default async function run() {}' }
+  const api = createApi({ host: 'localhost:3000', apiKey: 'key' }, async (path, options) => {
+    assert.equal(String(path), '/api/function-def/format%2Fhello')
+    assert.equal(options?.method, 'GET')
+    assert.equal(options.signal, controller.signal)
+    assert.equal(new Headers(options.headers).get('Authorization'), 'Bearer key')
+    return Response.json(definition)
+  })
+  assert.deepEqual(await api.functionDefinition('format/hello', controller.signal), definition)
+  const missing = createApi({ host: 'localhost:3000', apiKey: '' }, async () => new Response('', { status: 404 }))
+  await assert.rejects(missing.functionDefinition('missing', controller.signal), /404.*function.*could not be found/)
+})

@@ -36,7 +36,9 @@ the same way as an unknown ID.
 | `GET` | `/workflow-def/{def_id}` | Get a complete registered workflow definition. |
 | `POST` | `/workflow-def/{def_id}` | Create and queue a workflow instance. |
 | `POST` | `/workflow-def/{def_id}/tasks/{task_id}` | Execute one workflow task in isolation. |
+| `GET` | `/function-def` | List registered function summaries in the selected namespace. |
 | `POST` | `/function-def` | Register a reusable function definition. |
+| `GET` | `/function-def/{def_id}` | Get a complete registered function definition. |
 | `DELETE` | `/function-def/{def_id}` | Delete a reusable function definition. |
 | `GET` | `/workflows` | List workflow instances. |
 | `GET` | `/workflows/{id}` | Get workflow status. |
@@ -216,6 +218,26 @@ RelayFold does not enforce a versioning scheme. Suffixes such as `_v2` are a
 suggested convention for choosing a new definition ID.
 
 ## Function definitions
+
+List registered functions with `GET /function-def`:
+
+```bash
+curl -sS "$RELAYFOLD_URL/function-def"
+```
+
+The response is `{ "function_defs": [...] }`, ordered by function ID ascending.
+Each entry contains only `id`; code and dependencies are fetched separately.
+Function descriptions are not currently supported. An empty registry returns
+`{ "function_defs": [] }`. Only functions in the selected namespace are listed.
+
+Fetch a complete function definition with `GET /function-def/{def_id}`:
+
+```bash
+curl -sS "$RELAYFOLD_URL/function-def/format.hello"
+```
+
+The response contains `id`, `dependencies`, and `code`. Unknown IDs, including
+IDs that exist only in another namespace, return `404 Not Found`.
 
 Register a reusable function definition:
 

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::core::function::models::FunctionDef;
+use crate::core::function::models::{FunctionDef, FunctionDefSummary};
 use crate::core::namespace::Namespace;
 use crate::core::util::unix_timestamp_ms;
 use crate::core::workflow::events::WorkflowEventRecord;
@@ -128,6 +128,22 @@ impl StoragePort for MemoryStorage {
     ) -> StorageResult<Option<FunctionDef>> {
         let map = self.function_defs.read().await;
         Ok(map.get(&resource_key(namespace, id)).cloned())
+    }
+
+    async fn list_function_def(
+        &self,
+        namespace: &Namespace,
+    ) -> StorageResult<Vec<FunctionDefSummary>> {
+        let map = self.function_defs.read().await;
+        let mut definitions = map
+            .iter()
+            .filter(|((definition_namespace, _), _)| definition_namespace == namespace)
+            .map(|(_, definition)| FunctionDefSummary {
+                id: definition.id.clone(),
+            })
+            .collect::<Vec<_>>();
+        definitions.sort_by(|left, right| left.id.cmp(&right.id));
+        Ok(definitions)
     }
 
     async fn delete_function_def(&self, namespace: &Namespace, id: &str) -> StorageResult<bool> {

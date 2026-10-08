@@ -186,6 +186,11 @@ See the Function workspace README for contracts and test details.
 
 ## Register and preview
 
+The workflow's `example_input` prefills the UI JSON trigger input with the
+repository and log group shown below, a 24-hour lookback, and `dry_run: true`.
+Edit the repository, region, and log group to match your deployment before
+starting a run. Set `dry_run: false` when you want to publish issues.
+
 ```bash
 export RELAYFOLD_URL=http://localhost:3000
 curl -fsS -X POST "$RELAYFOLD_URL/workflow-def" \

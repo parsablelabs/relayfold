@@ -76,7 +76,14 @@ The `dist` files alone do not provide a proxy.
 
 ## Behavior to check
 
-- Register workflows and trigger multiple instances through the orchestrator.
+- Open **Functions** to see registered function IDs; click an ID to fetch
+  its dependency versions and JavaScript code. Use **Register function**
+  to paste and register a complete YAML or JSON definition. Registering an
+  existing ID replaces the function. Registration errors keep the pasted text.
+- Open **Workflows → Register workflow**, paste a complete YAML or JSON
+  definition, and register it. Confirm success and use **View registered workflows**
+  to find it. Invalid definitions and immutable-ID conflicts show errors and
+  keep the pasted text available for edits.
 - Click a registered workflow name to inspect its diagram and YAML. Diagram
   arrows follow data bindings; isolated tasks stay independent. Diamonds mark
   verifiers and dashed arrows show explicit rerun targets. The YAML returned by

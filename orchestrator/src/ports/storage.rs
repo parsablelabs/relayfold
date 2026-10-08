@@ -1,4 +1,4 @@
-use crate::core::function::models::FunctionDef;
+use crate::core::function::models::{FunctionDef, FunctionDefSummary};
 use crate::core::namespace::Namespace;
 use crate::core::task::{TaskInputMapping, TaskSatisfactionStatus};
 use crate::core::verifier::VerifierAttemptMetadata;
@@ -301,6 +301,12 @@ pub trait StoragePort {
         namespace: &Namespace,
         id: &str,
     ) -> StorageResult<Option<FunctionDef>>;
+
+    /// Lists lightweight function metadata in this namespace, ordered by ID ascending.
+    async fn list_function_def(
+        &self,
+        namespace: &Namespace,
+    ) -> StorageResult<Vec<FunctionDefSummary>>;
 
     /// Returns the latest committed workflow-instance snapshot for `id`, or `None` when it does not
     /// exist.

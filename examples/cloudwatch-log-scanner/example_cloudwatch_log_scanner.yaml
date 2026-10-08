@@ -1,5 +1,12 @@
 id: cloudwatch-log-scanner
 description: Scan CloudWatch warnings/errors and submit evidence-backed GitHub issues without code changes.
+example_input:
+  repository: markosski/fillmyfunnel
+  targets:
+    - region: us-east-1
+      log_group: /aws/lambda/phonecallfetcher_prod
+  lookback_hours: 24
+  dry_run: true
 tasks:
   - id: scan-cloudwatch
     timeout_secs: 600
