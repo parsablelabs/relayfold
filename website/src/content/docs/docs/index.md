@@ -37,13 +37,20 @@ RelayFold treats an agent the same way it treats a function or API task: as a no
 
 RelayFold's frontend provides a terminal-inspired browser console with compact
 panels, monospace text, blue accents matching the RelayFold logo, and labeled
-workflow statuses. Use **Workflows** to browse
+workflow statuses. The sidebar shows unnumbered menu items, with the active view
+highlighted. Use **Workflows** to browse
 definitions, inspect diagrams and YAML, and start runs with JSON input. Use
 **Instances** to filter runs, inspect task attempts and events, respond to human
-input requests, pause or resume runs, and restart failed tasks. These views
+input requests, pause or resume runs, and restart failed tasks. Human input forms
+appear only while the workflow is in **InputNeeded** and has a task requesting
+input; they disappear when the workflow leaves that state. Only the latest
+attempt of each task can show an input form, so repeated questions replace the
+previous request. Earlier attempts remain visible in the task history. These views
 refresh every five seconds and also offer a manual refresh button. Instance
 details open on **Instance Status**, which shows task attempts, execution
 controls, and a diagram highlighting each step's latest attempt and generation.
+Completed diagram nodes and **Success** labels in the instance list, instance
+summary, and task attempts use matching green accents.
 Verifier tasks appear in the diagram and task table alongside other steps.
 Diagrams use compact spacing and small monospace labels; wide diagrams scroll
 horizontally within their panel.

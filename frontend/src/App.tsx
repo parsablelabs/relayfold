@@ -6,7 +6,7 @@ import { diagramFromYaml } from './workflowGraph'
 import type { Definition } from './workflowGraph'
 import { createTriggerValidator, exampleTriggerInput } from './triggerInput'
 import WorkflowDiagram from './WorkflowDiagram'
-import { shouldPollInstance } from './instanceState'
+import { pendingHumanInputs, shouldPollInstance } from './instanceState'
 import './index.css'
 
 const defaultHost = import.meta.env.VITE_DEFAULT_API_HOST || 'http://localhost:3000'
@@ -256,7 +256,7 @@ function InstanceDiagram({ api, report }: { api: Api; report: Report }) {
     catch (error) { return { error: message(error) } }
   }, [state.data, report.tasks])
   return <><h2 className="section-title">Execution diagram</h2>
-    <p className="muted diagram-legend">Each step shows its latest attempt. Running steps are cyan, successful steps blue, failed steps red, and input requests amber. Arrows show data bindings.</p>
+    <p className="muted diagram-legend">Each step shows its latest attempt. Running steps are cyan, successful steps green, failed steps red, and input requests amber. Arrows show data bindings.</p>
     <section className="glass-panel panel"><Feedback error={state.error || diagram?.error} loading={state.data === undefined} />
       {state.error && <button className="btn btn-secondary" onClick={state.refresh}>Retry loading diagram</button>}
       {diagram && 'definition' in diagram && (diagram.definition.tasks.length ? <WorkflowDiagram source={diagram.source} /> : <p className="notice">This workflow has no tasks.</p>)}
@@ -301,7 +301,7 @@ function InstanceDetails({ api, id, back }: { api: Api; id: string; back: () => 
       {actionError && <p className="notice error" role="alert">{actionError}</p>}{actionMessage && <p className="notice" role="status">{actionMessage}</p>}
       {report.status === 'Paused' && <p className="notice">Running tasks may finish; further task execution waits until you resume.</p>}
       <InstanceDiagram api={api} report={report} />
-      {report.tasks.filter(task => typeof task.status === 'object').map(task => <section className="glass-panel panel" key={task.task_attempt_id}><HumanInput api={api} report={report} task={task} busy={busy} complete={state.refresh} /></section>)}
+      {pendingHumanInputs(report).map(task => <section className="glass-panel panel" key={task.task_attempt_id}><HumanInput api={api} report={report} task={task} busy={busy} complete={state.refresh} /></section>)}
       <h2 className="section-title">Task attempts</h2><div className="glass-panel table-scroll"><table><thead><tr><th>Attempt</th><th>Status</th><th>Generation</th><th>Satisfaction</th><th>Actions</th></tr></thead><tbody>{report.tasks.map(task => <tr key={task.task_attempt_id}><td>{task.task_attempt_id}</td><td><Badge status={taskStatus(task)} /></td><td>{task.generation_index}</td><td>{task.satisfaction}</td><td>{report.status === 'Failed' && task.status === 'Failed' && <button className="btn btn-secondary" disabled={busy} aria-label={`Restart failed task ${task.task_attempt_id}`} onClick={() => void performAction(() => api.retryTask(id, task.task_attempt_id), `Task ${task.task_attempt_id} queued to restart.`)}>Restart task</button>}</td></tr>)}</tbody></table>{report.tasks.length === 0 && <p className="notice">No task attempts yet.</p>}</div>
     </>}
     </div>
@@ -339,8 +339,8 @@ function App() {
   const [connection, setConnection] = useState<Connection>(() => ({ host: savedHost(), apiKey: '' }))
   const api = useMemo(() => createApi(connection), [connection])
   const title = page === 'workflows' ? workflowTab === 'register' ? 'Register workflow' : selectedWorkflow ? 'Workflow definition' : 'Workflows' : page === 'functions' ? 'Functions' : page === 'settings' ? 'Settings' : selected ? 'Instance details' : 'Instances'
-  return <div className="app-container"><div className="terminal-header"><span className="terminal-brand">[rf] RelayFold</span><span className="muted">workflow orchestrator / console</span></div><aside className="sidebar"><div className="nav-section-title">Navigation</div><nav className="nav-menu" aria-label="Main navigation">
-    {(['workflows', 'functions', 'instances', 'settings'] as const).map((value, index) => <button key={value} className={`nav-item ${page === value ? 'active' : ''}`} aria-current={page === value ? 'page' : undefined} onClick={() => { setPage(value); setSelectedWorkflow(null); setWorkflowTab('browse'); if (value !== 'instances') setSelected(null) }}><span className="nav-marker" aria-hidden="true">{page === value ? '>' : String(index + 1).padStart(2, '0')}</span>{value[0].toUpperCase() + value.slice(1)}</button>)}
+  return <div className="app-container"><div className="terminal-header"><span className="terminal-brand">[rf] RelayFold</span><span className="muted">workflow orchestrator / console</span></div><aside className="sidebar"><nav className="nav-menu" aria-label="Main navigation">
+    {(['workflows', 'functions', 'instances', 'settings'] as const).map(value => <button key={value} className={`nav-item ${page === value ? 'active' : ''}`} aria-current={page === value ? 'page' : undefined} onClick={() => { setPage(value); setSelectedWorkflow(null); setWorkflowTab('browse'); if (value !== 'instances') setSelected(null) }}>{page === value && <span className="nav-marker" aria-hidden="true">{'>'}</span>}{value[0].toUpperCase() + value.slice(1)}</button>)}
     </nav><div className="sidebar-host">Public API<br /><span>{connection.host}</span></div></aside>
     <main className="main-content"><header className="page-header"><div><h1 className="page-title">{title}</h1><p className="page-subtitle">{page === 'workflows' ? 'Browse and register workflow definitions.' : page === 'functions' ? 'Browse and register reusable functions.' : page === 'settings' ? 'Configure your orchestrator connection.' : 'Monitor workflow execution and respond to input requests.'}</p></div></header>
       {page === 'settings' ? <Settings connection={connection} save={setConnection} /> : <div key={connection.host + connection.apiKey}>

@@ -1,5 +1,6 @@
 import { parse } from 'yaml'
 import type { Task } from './api'
+import { latestTaskAttempts } from './instanceState.ts'
 
 type DefinitionTask = {
   id: string
@@ -28,11 +29,7 @@ export function diagramFromYaml(yaml: string, attempts?: Task[]): { definition: 
   }
   const nodes = new Map<string, string>()
   const lines = ['flowchart LR']
-  const latest = new Map<string, Task>()
-  attempts?.forEach(attempt => {
-    const previous = latest.get(attempt.task_def_id)
-    if (!previous || attempt.generation_index > previous.generation_index) latest.set(attempt.task_def_id, attempt)
-  })
+  const latest = new Map(latestTaskAttempts(attempts ?? []).map(attempt => [attempt.task_def_id, attempt]))
   definition.tasks.forEach((task, index) => {
     if (!task || typeof task.id !== 'string' || !task.kind || typeof task.kind !== 'object' || Object.keys(task.kind).length !== 1) {
       throw new Error('Each task must have an id and a single task kind.')
@@ -64,7 +61,7 @@ export function diagramFromYaml(yaml: string, attempts?: Task[]): { definition: 
   if (attempts) lines.push(
     '  classDef pending fill:#19253b,stroke:#9aaac4,color:#e2e8f4',
     '  classDef running fill:#163139,stroke:#83d6e5,color:#e2e8f4,stroke-width:3px',
-    '  classDef completed fill:#192e52,stroke:#78a5ff,color:#e2e8f4',
+    '  classDef completed fill:#193328,stroke:#86d9a5,color:#86d9a5',
     '  classDef failed fill:#3b2020,stroke:#ffabab,color:#e2e8f4',
     '  classDef inputneeded fill:#39301c,stroke:#ecc77e,color:#e2e8f4,stroke-width:3px',
   )
