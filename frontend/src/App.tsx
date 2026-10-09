@@ -190,13 +190,13 @@ function WorkflowDetails({ api, id }: { api: Api; id: string }) {
     <Refresh {...state} poll={false} idle="Loaded when this workflow opens" /><Feedback error={state.error} loading={!state.data} />
     {state.data && <>
       <section className="glass-panel panel"><h2>{diagram?.definition.id ?? id}</h2><p className="muted">{diagram?.definition.description}</p></section>
-      {diagram && <StartWorkflow api={api} id={id} definition={diagram.definition} openInstance={instanceId => navigate(pageUrl('instances', instanceId))} />}
       <h2 className="section-title">Workflow diagram</h2>
       <p className="muted diagram-legend">Arrows show data bindings. Diamonds mark verifiers; dashed arrows show explicitly configured rerun targets. Tasks without bindings are independent.</p>
       <section className="glass-panel panel">
         {state.data.error && <p className="notice error" role="alert">Unable to build workflow diagram: {state.data.error}</p>}
         {diagram && (diagram.definition.tasks.length ? <WorkflowDiagram key={diagram.source} source={diagram.source} /> : <p className="notice">This workflow has no tasks.</p>)}
       </section>
+      {diagram && <StartWorkflow api={api} id={id} definition={diagram.definition} openInstance={instanceId => navigate(pageUrl('instances', instanceId))} />}
       <details className="glass-panel panel"><summary>Registered YAML configuration</summary><pre>{state.data.yaml}</pre></details>
     </>}
   </>
@@ -262,10 +262,12 @@ function InstanceDiagram({ api, report }: { api: Api; report: Report }) {
     catch (error) { return { error: message(error) } }
   }, [state.data, report.tasks])
   return <><h2 className="section-title">Execution diagram</h2>
-    <p className="muted diagram-legend">Each step shows its latest attempt. Running steps are cyan, successful steps green, failed steps red, and input requests amber. Arrows show data bindings.</p>
+    <div className="execution-legend" role="group" aria-label="Diagram status colors">
+      {(['Pending', 'Running', 'Completed', 'Failed', 'InputNeeded'] as const).map(status => <span key={status} className={`execution-legend-item status-${status.toLowerCase()}`}><span className="execution-legend-swatch" aria-hidden="true" />{status === 'Pending' ? 'Pending / Skipped' : label(status)}</span>)}
+    </div>
     <section className="glass-panel panel"><Feedback error={state.error || diagram?.error} loading={state.data === undefined} />
       {state.error && <button className="btn btn-secondary" onClick={state.refresh}>Retry loading diagram</button>}
-      {diagram && 'definition' in diagram && (diagram.definition.tasks.length ? <WorkflowDiagram source={diagram.source} /> : <p className="notice">This workflow has no tasks.</p>)}
+      {diagram && 'definition' in diagram && (diagram.definition.tasks.length ? <WorkflowDiagram source={diagram.source} animated={report.status === 'Running'} /> : <p className="notice">This workflow has no tasks.</p>)}
     </section>
   </>
 }

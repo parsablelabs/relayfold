@@ -225,3 +225,7 @@ curl -fsS "$RELAYFOLD_URL/workflows/<workflow_id>/tasks/publish-issues"
 ```
 
 Each run investigates one group and creates at most one issue. Other groups are reconsidered on later scans; they are not queued persistently. A selected group that yields no actionable issue can be selected again and delay lower-priority groups. Inspect the `select-group` task output for its selection reason.
+
+Parallel analysis of discovered groups within one workflow is under consideration
+and is not currently supported. The proposed direction would retain each group's
+task progress so a failed task could be retried without rerunning completed groups.

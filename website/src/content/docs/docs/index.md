@@ -49,11 +49,20 @@ previous request. Earlier attempts remain visible in the task history. These vie
 refresh every five seconds and also offer a manual refresh button. Instance
 details open on **Instance Status**, which shows task attempts, execution
 controls, and a diagram highlighting each step's latest attempt and generation.
+A compact color legend identifies pending/skipped, running, successful, failed,
+and input-needed steps above the execution diagram. Pending and skipped steps
+share the same color.
 Completed diagram nodes and **Success** labels in the instance list, instance
 summary, and task attempts use matching green accents.
 Verifier tasks appear in the diagram and task table alongside other steps.
 Diagrams use compact spacing and small monospace labels; wide diagrams scroll
 horizontally within their panel.
+Instance diagram connections animate only while the workflow is **Running**,
+with moving dashes in the direction of data flow; verifier rerun arrows use a
+slower dotted animation. Connections are static in all other states, including
+**Success**, **Failed**, and **Paused**. These animations
+indicate connection direction, not live data transfers, and are disabled when
+your browser requests reduced motion.
 Instance status polls while **Pending** or **Running**, and stops in other
 states. Use **Refresh** to check for changes made elsewhere. Resume, retry, and
 human-input submission refresh immediately and restart polling if the returned

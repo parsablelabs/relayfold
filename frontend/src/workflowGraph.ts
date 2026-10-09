@@ -59,7 +59,7 @@ export function diagramFromYaml(yaml: string, attempts?: Task[]): { definition: 
     if (target) lines.push(`  ${nodeFor(task.id)} -. rerun .-> ${nodeFor(target)}`)
   })
   if (attempts) lines.push(
-    '  classDef pending fill:#19253b,stroke:#9aaac4,color:#e2e8f4',
+    '  classDef pending,skipped fill:#19253b,stroke:#9aaac4,color:#e2e8f4',
     '  classDef running fill:#163139,stroke:#83d6e5,color:#e2e8f4,stroke-width:3px',
     '  classDef completed fill:#193328,stroke:#86d9a5,color:#86d9a5',
     '  classDef failed fill:#3b2020,stroke:#ffabab,color:#e2e8f4',

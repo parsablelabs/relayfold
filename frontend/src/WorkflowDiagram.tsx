@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 let diagramId = 0
 
-export default function WorkflowDiagram({ source }: { source: string }) {
+export default function WorkflowDiagram({ source, animated = false }: { source: string; animated?: boolean }) {
   const [svg, setSvg] = useState('')
   const [error, setError] = useState('')
   useEffect(() => {
@@ -24,5 +24,5 @@ export default function WorkflowDiagram({ source }: { source: string }) {
   }, [source])
   if (error) return <p className="notice error" role="alert">Unable to render workflow diagram: {error}</p>
   if (!svg) return <p className="notice" role="status">Rendering diagram…</p>
-  return <div className="workflow-diagram" role="img" aria-label="Workflow task dependency diagram" dangerouslySetInnerHTML={{ __html: svg }} />
+  return <div className={`workflow-diagram${animated ? ' workflow-diagram--animated' : ''}`} role="img" aria-label="Workflow task dependency diagram" dangerouslySetInnerHTML={{ __html: svg }} />
 }

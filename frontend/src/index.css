@@ -101,7 +101,24 @@ summary { cursor: pointer; }
 pre { font-family: inherit; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; padding: 12px; margin-top: 12px; border: 1px solid var(--color-border); background: var(--color-bg-base); max-height: 500px; overflow: auto; }
 .workflow-diagram { overflow: auto; padding: 12px 0; }
 .workflow-diagram svg { display: block; margin: auto; }
+@keyframes diagram-flow {
+  to { stroke-dashoffset: -20; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .workflow-diagram--animated .flowchart-link {
+    stroke-dasharray: 8 12 !important;
+    animation: diagram-flow 1.2s linear infinite;
+  }
+  .workflow-diagram--animated .flowchart-link.edge-pattern-dotted {
+    stroke-dasharray: 3 7 !important;
+    animation-duration: 1.8s;
+  }
+}
 .diagram-legend { margin-bottom: 12px; }
+.execution-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 8px; font-size: 11px; }
+.execution-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.execution-legend-item.status-pending { color: #9aaac4; }
+.execution-legend-swatch { width: 8px; height: 8px; background: currentColor; border-radius: 2px; }
 .trigger-input-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 .trigger-input-grid .muted { margin-top: 8px; }
 .trigger-schemas { display: flex; flex-direction: column; gap: 12px; }

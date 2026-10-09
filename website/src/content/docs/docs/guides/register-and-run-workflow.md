@@ -156,7 +156,8 @@ Save the returned `id`; it is the workflow instance ID used for status and resul
 
 If the API returns `503 Service Unavailable`, no eligible worker host is registered yet.
 
-You can also start a run in the UI: open the registered workflow, review or edit
+You can also start a run in the UI: open the registered workflow, review the
+workflow diagram above the **Start workflow** section, then review or edit
 **JSON trigger input**, and choose **Start workflow**. The `example_input` field
 in the definition above prefills this input with `{ "name": "Ada" }`. It does
 not supply a default for API requests or scheduled runs.
