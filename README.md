@@ -16,6 +16,8 @@ workflow model.
 > RelayFold is in early development. Expect bugs and breaking changes.
 
 <img width="1508" height="852" alt="image" src="https://github.com/user-attachments/assets/44987713-55a8-492d-8ef2-d644005a7ca1" />
+<img width="1635" height="921" alt="image" src="https://github.com/user-attachments/assets/0f6f9a37-3bad-4849-b631-838d379599c6" />
+
 
 
 ## What RelayFold Provides
