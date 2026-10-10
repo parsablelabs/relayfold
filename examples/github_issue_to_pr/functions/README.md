@@ -1,6 +1,6 @@
 # GitHub Issue to PR Functions
 
-`github-issue-to-pr.fetch_issue` fetches one issue using the GitHub REST API,
+`github-issue-to-pr.fetch_issue_and_pr` fetches one issue using the GitHub REST API,
 without an LLM or GitHub CLI. It requires `gh_token` and input
 `{ "repository": "owner/repo", "issue_number": 7 }`.
 
@@ -28,5 +28,25 @@ artifacts in `dist/` are ignored by Git. Register the fetch Function before the 
 ```bash
 export RELAYFOLD_URL=http://localhost:3000
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
-  --data-binary @dist/github-issue-to-pr.fetch_issue.json
+  --data-binary @dist/github-issue-to-pr.fetch_issue_and_pr.json
 ```
+
+### Continue an existing pull request
+
+Add optional `pr_number` to the input, for example
+`{ "repository": "owner/repo", "issue_number": 7, "pr_number": 12 }`.
+The PR must belong to the input repository. The fetch Function includes an optional
+`pr` object with `pr_number`, `pr_url`, `title`, `body`, uppercase `state`,
+`branch`, and all pages of `comments` (conversation bodies), `review_comments`
+(inline review bodies), and `reviews` (review summary bodies). GitHub errors or
+incomplete pagination fail the task rather than passing partial context.
+See GitHub's [review comments API](https://docs.github.com/en/rest/pulls/comments)
+and [issue comments API](https://docs.github.com/en/rest/issues/comments).
+
+Implementation checks out the supplied PR and uses its discussion and reviews as
+context. Review receives the same context, and publication pushes to the existing
+branch without creating a duplicate PR. The final issue comment links to the reused
+PR. `pr_created` remains false for a reused PR, so reuse does not add the
+`relayfold:pr-created` label. Existing issue-label guards still apply: remove a
+blocking label deliberately before rerunning. Closed or merged PR details can be
+fetched; the Agents must inspect their state before deciding how to proceed.

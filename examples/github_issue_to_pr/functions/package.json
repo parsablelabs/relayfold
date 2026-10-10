@@ -13,8 +13,8 @@
   "relayfold": {
     "functions": [
       {
-        "id": "github-issue-to-pr.fetch_issue",
-        "source": "src/fetch-issue.mjs",
+        "id": "github-issue-to-pr.fetch_issue_and_pr",
+        "source": "src/fetch-issue-and-pr.mjs",
         "dependencies": []
       }
     ]

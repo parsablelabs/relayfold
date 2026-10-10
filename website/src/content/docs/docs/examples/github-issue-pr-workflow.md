@@ -27,7 +27,7 @@ Add `gh_token` to the worker credential file together with `gemini_api_key`:
 }
 ```
 
-The token must be able to read the target repository issue and comments, push a branch, create a pull request, comment on the issue, and create and apply repository labels. The `fetch-issue` Function requires only `gh_token`; it does not use an LLM or the GitHub CLI.
+The token must be able to read the target repository issue and comments, push a branch, create a pull request, comment on the issue, and create and apply repository labels. The `fetch-issue-and-pr` Function requires only `gh_token`; it does not use an LLM or the GitHub CLI.
 
 ## Inputs
 
@@ -51,7 +51,7 @@ The requested issue must have the exact `relayfold` label. Issues without that l
 <pre class="mermaid">
 flowchart TD
     Input["Issue input: repository + issue_number"]
-    Fetch["fetch-issue: Function reads relayfold-labeled issue"]
+    Fetch["fetch-issue-and-pr: Function reads relayfold-labeled issue"]
     Implement["implement-change: edit shared repo workspace"]
     Review{"review-implementation accepts?"}
     PR["create-pull-request: commit, push, open PR"]
@@ -75,7 +75,7 @@ flowchart TD
     PR -. gh failure .-> Failed
 </pre>
 
-1. `fetch-issue` calls `github-issue-to-pr.fetch_issue`, a deterministic Function that reads the issue and all comment pages through the [GitHub REST API](https://docs.github.com/en/rest/issues/issues#get-an-issue). It requires `relayfold`, rejects `relayfold:pr-created` and `relayfold:human-input-needed`, and returns `repository`, `issue_number`, `issue_url`, `title`, `state`, `body`, and `comments` (comment bodies). It makes no LLM calls. The implementation and review Agents interpret acceptance criteria from the original body and comments.
+1. `fetch-issue-and-pr` calls `github-issue-to-pr.fetch_issue_and_pr`, a deterministic Function that reads the issue and all comment pages through the [GitHub REST API](https://docs.github.com/en/rest/issues/issues#get-an-issue). It requires `relayfold`, rejects `relayfold:pr-created` and `relayfold:human-input-needed`, and returns `repository`, `issue_number`, `issue_url`, `title`, `state`, `body`, and `comments` (comment bodies). It makes no LLM calls. The implementation and review Agents interpret acceptance criteria from the original body and comments.
 2. `implement-change` receives the issue details, updates the checkout in the shared `repo` workspace, runs relevant checks, and can pause for clarification when the issue is underspecified.
 3. `review-implementation` checks the implementation against the issue criteria and test results. It can return `continue` with feedback, causing RelayFold to rerun from `implement-change` up to the bounded loop limit.
 4. `create-pull-request` runs after the verifier accepts the implementation, commits and pushes the branch, and creates the PR with `gh pr create`. The PR body includes a full link to the issue it addresses, a change summary, and test results. The Agent checks the published body and adds the issue link if missing, preserving existing content and avoiding duplicate links.
@@ -95,7 +95,7 @@ cd examples/github_issue_to_pr/functions
 npm test
 export RELAYFOLD_URL=http://localhost:3000
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
-  --data-binary @dist/github-issue-to-pr.fetch_issue.json
+  --data-binary @dist/github-issue-to-pr.fetch_issue_and_pr.json
 cd ../../functions
 npm test
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
@@ -138,3 +138,27 @@ curl -fsS "$RELAYFOLD_URL/workflows/<workflow_id>/tasks/update-github-issue"
 
 For a recurring workflow that analyzes production logs and files issues, see
 [FillMyFunnel CloudWatch Review](/relayfold/docs/examples/fillmyfunnel-cloudwatch-workflow/).
+
+### Continue an existing pull request
+
+Add optional `pr_number` to the input, for example
+`{ "repository": "owner/repo", "issue_number": 7, "pr_number": 12 }`.
+The PR must belong to the input repository. The fetch Function includes an optional
+`pr` object with `pr_number`, `pr_url`, `title`, `body`, uppercase `state`,
+`branch`, and all pages of `comments` (conversation bodies), `review_comments`
+(inline review bodies), and `reviews` (review summary bodies). GitHub errors or
+incomplete pagination fail the task rather than passing partial context.
+See GitHub's [review comments API](https://docs.github.com/en/rest/pulls/comments)
+and [issue comments API](https://docs.github.com/en/rest/issues/comments).
+
+Implementation checks out the supplied PR head branch and continues from its
+existing implementation. It treats requested changes in PR conversation comments,
+inline review comments, and review summaries as implementation instructions alongside
+the issue acceptance criteria, accounting for later clarifications and feedback
+already addressed. Conflicting instructions that require a critical decision trigger
+`ask_user`. Verifier retries preserve the ongoing work on the same PR branch. Review receives the same context, and publication pushes to the existing
+branch without creating a duplicate PR. The final issue comment links to the reused
+PR. `pr_created` remains false for a reused PR, so reuse does not add the
+`relayfold:pr-created` label. Existing issue-label guards still apply: remove a
+blocking label deliberately before rerunning. Closed or merged PR details can be
+fetched; the Agents must inspect their state before deciding how to proceed.

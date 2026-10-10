@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { createIssueFetcher } from "../src/fetch-issue.mjs";
+import { createIssueAndPrFetcher } from "../src/fetch-issue-and-pr.mjs";
 
 const context = {
   inputs: [{ repository: "example/service", issue_number: 7 }],
@@ -23,7 +23,7 @@ const reply = (json, status = 200) => ({
 
 test("fetches a labeled issue and all comment pages without an LLM", async () => {
   const requests = [];
-  const run = createIssueFetcher({
+  const run = createIssueAndPrFetcher({
     fetch: async (url, options) => {
       requests.push({ url, options });
       if (!url.includes("/comments")) return reply(issue);
@@ -66,7 +66,7 @@ test("rejects unlabeled issues and pull requests before fetching comments", asyn
     { pull_request: {} },
   ]) {
     let calls = 0;
-    const run = createIssueFetcher({
+    const run = createIssueAndPrFetcher({
       fetch: async () => {
         calls++;
         return reply({ ...issue, ...changed });
@@ -78,7 +78,7 @@ test("rejects unlabeled issues and pull requests before fetching comments", asyn
 });
 
 test("validates input before making GitHub requests", async () => {
-  const run = createIssueFetcher({
+  const run = createIssueAndPrFetcher({
     fetch: () => assert.fail("No network call expected"),
   });
   for (const input of [
@@ -93,23 +93,23 @@ test("validates input before making GitHub requests", async () => {
 
 test("fails rather than returning incomplete or invalid GitHub data", async () => {
   await assert.rejects(
-    createIssueFetcher({ fetch: async () => reply(null, 404) })(context),
+    createIssueAndPrFetcher({ fetch: async () => reply(null, 404) })(context),
     /404/,
   );
   await assert.rejects(
-    createIssueFetcher({ fetch: async () => reply({}) })(context),
+    createIssueAndPrFetcher({ fetch: async () => reply({}) })(context),
     /Invalid GitHub issue/,
   );
   for (const comments of [reply(null, 403), reply({ message: "invalid" })])
     await assert.rejects(
-      createIssueFetcher({
+      createIssueAndPrFetcher({
         fetch: async (url) =>
           url.includes("/comments") ? comments : reply(issue),
       })(context),
       /403|Invalid GitHub comments/,
     );
   await assert.rejects(
-    createIssueFetcher({
+    createIssueAndPrFetcher({
       fetch: async (url) =>
         reply(
           url.includes("/comments")
@@ -124,7 +124,7 @@ test("fails rather than returning incomplete or invalid GitHub data", async () =
 test("generated Function preserves empty bodies and comments without dependencies", async () => {
   const artifact = JSON.parse(
     await readFile(
-      new URL("../dist/github-issue-to-pr.fetch_issue.json", import.meta.url),
+      new URL("../dist/github-issue-to-pr.fetch_issue_and_pr.json", import.meta.url),
       "utf8",
     ),
   );
@@ -132,7 +132,7 @@ test("generated Function preserves empty bodies and comments without dependencie
   const module = await import(
     `data:text/javascript;base64,${Buffer.from(artifact.code).toString("base64")}`
   );
-  const result = await module.createIssueFetcher({
+  const result = await module.createIssueAndPrFetcher({
     fetch: async (url) =>
       reply(
         url.includes("/comments")
@@ -143,4 +143,54 @@ test("generated Function preserves empty bodies and comments without dependencie
   assert.equal(result.body, "");
   assert.equal(result.state, "CLOSED");
   assert.deepEqual(result.comments, [""]);
+});
+
+const prContext = { ...context, inputs: [{ ...context.inputs[0], pr_number: 12 }] };
+const pull = {
+  number: 12, title: "Existing change", body: "Implementation",
+  html_url: "https://github.com/example/service/pull/12", state: "open",
+  head: { ref: "fix-failure" },
+};
+
+test("fetches all pages of PR conversations, inline comments, and review summaries", async () => {
+  const requests = [];
+  const run = createIssueAndPrFetcher({ fetch: async (url) => {
+    requests.push(url);
+    if (url.endsWith("/issues/7")) return reply(issue);
+    if (url.endsWith("/pulls/12")) return reply(pull);
+    if (url.includes("/issues/7/comments")) return reply([]);
+    return reply(url.endsWith("page=1")
+      ? Array.from({ length: 100 }, () => ({ body: "Earlier feedback" }))
+      : [{ body: "Latest feedback" }]);
+  }});
+  const result = await run(prContext);
+  assert.equal(result.pr.pr_number, 12);
+  assert.equal(result.pr.branch, "fix-failure");
+  assert.equal(result.pr.state, "OPEN");
+  for (const field of ["comments", "review_comments", "reviews"]) {
+    assert.equal(result.pr[field].length, 101);
+    assert.equal(result.pr[field].at(-1), "Latest feedback");
+  }
+  assert.equal(requests.length, 9);
+});
+
+test("rejects invalid optional PR numbers before requests", async () => {
+  for (const pr_number of [null, 0, -1, 1.5, "12"]) {
+    const run = createIssueAndPrFetcher({ fetch: () => assert.fail("No request expected") });
+    await assert.rejects(run({ ...context, inputs: [{ ...context.inputs[0], pr_number }] }), /pr_number/);
+  }
+});
+
+test("fails on missing PRs, invalid responses, and incomplete PR feedback", async () => {
+  for (const failingPath of ["/pulls/12", "/issues/12/comments", "/pulls/12/comments", "/pulls/12/reviews"]) {
+    for (const failure of [reply(null, 404), reply({})]) {
+      const run = createIssueAndPrFetcher({ fetch: async (url) => {
+        if (url.includes(failingPath)) return failure;
+        if (url.endsWith("/issues/7")) return reply(issue);
+        if (url.endsWith("/pulls/12")) return reply(pull);
+        return reply([]);
+      }});
+      await assert.rejects(run(prContext), /404|Invalid GitHub/);
+    }
+  }
 });
