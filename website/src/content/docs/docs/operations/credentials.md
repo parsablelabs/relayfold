@@ -397,6 +397,11 @@ automatically copied to the host directory.
 Development and release containers default to `orchestrator start`.
 >>>>>>> Stashed changes
 
+Subscription sign-in through Pi's `openai-codex` provider is being designed and
+is not available in RelayFold yet. The design centralizes login and token renewal
+on the orchestrator, with workers obtaining access credentials for model requests.
+Continue using the API-key setup above until that integration is implemented.
+
 ## Missing credentials
 
 If any required credential is missing, the task fails before its main work runs. This keeps credential failures explicit and avoids starting work that cannot complete.
