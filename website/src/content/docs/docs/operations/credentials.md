@@ -55,6 +55,11 @@ provider-standard API-key environment variables. It does not create a Pi
 runtime override from `required_credentials`, and it does not manage
 persistent Pi or OAuth authentication.
 
+Subscription sign-in through Pi's `openai-codex` provider is being designed and
+is not available in RelayFold yet. The design centralizes login and token renewal
+on the orchestrator, with workers obtaining access credentials for model requests.
+Continue using the API-key setup above until that integration is implemented.
+
 ## Missing credentials
 
 If any required credential is missing, the task fails before its main work runs. This keeps credential failures explicit and avoids starting work that cannot complete.
