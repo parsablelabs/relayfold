@@ -130,7 +130,8 @@ init_relayfold() {
     exit 1
   fi
 
-  mkdir -p "$RELAYFOLD_HOME/skills" "$RELAYFOLD_HOME/workspaces" "$RELAYFOLD_HOME/cache" "$RELAYFOLD_HOME/workflows"
+  mkdir -p "$RELAYFOLD_HOME/oauth" "$RELAYFOLD_HOME/skills" "$RELAYFOLD_HOME/workspaces" "$RELAYFOLD_HOME/cache" "$RELAYFOLD_HOME/workflows"
+  chmod 700 "$RELAYFOLD_HOME/oauth"
   if [ ! -f "$RELAYFOLD_HOME/file_credentials.json" ]; then
     printf '{}\n' > "$RELAYFOLD_HOME/file_credentials.json"
     chmod 600 "$RELAYFOLD_HOME/file_credentials.json"
@@ -167,7 +168,7 @@ doctor() {
     ok="false"
   fi
 
-  for path in "$RELAYFOLD_HOME" "$CONFIG_FILE" "$COMPOSE_FILE" "$RELAYFOLD_HOME/file_credentials.json" "$RELAYFOLD_HOME/skills" "$RELAYFOLD_HOME/workspaces" "$RELAYFOLD_HOME/cache" "$RELAYFOLD_HOME/workflows"; do
+  for path in "$RELAYFOLD_HOME" "$CONFIG_FILE" "$COMPOSE_FILE" "$RELAYFOLD_HOME/file_credentials.json" "$RELAYFOLD_HOME/oauth" "$RELAYFOLD_HOME/skills" "$RELAYFOLD_HOME/workspaces" "$RELAYFOLD_HOME/cache" "$RELAYFOLD_HOME/workflows"; do
     if [ -e "$path" ]; then
       echo "ok: $path exists"
     else

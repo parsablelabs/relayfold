@@ -1078,6 +1078,7 @@ data_bindings: []
                         id: "taska".to_string(),
                         kind: TaskTypeDef::Agent {
                             model_id: "model".to_string(),
+                            thinking_level: None,
                             provider_url: "provider".to_string(),
                             prompt: "prompt".to_string(),
                             tools: vec![],
@@ -1455,6 +1456,7 @@ code: "export default async function run() { return {}; }"
                         id: "taska".to_string(),
                         kind: TaskTypeDef::Agent {
                             model_id: "model".to_string(),
+                            thinking_level: None,
                             provider_url: "provider".to_string(),
                             prompt: "prompt".to_string(),
                             tools: vec![],

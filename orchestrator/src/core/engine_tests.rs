@@ -346,6 +346,7 @@ fn agent_task(id: &str, reuse_session: bool) -> TaskDef {
         id: id.to_string(),
         kind: TaskTypeDef::Agent {
             model_id: "test/model".to_string(),
+            thinking_level: None,
             provider_url: "".to_string(),
             prompt: "draft".to_string(),
             tools: vec![],
@@ -429,6 +430,7 @@ fn agent_verifier_task(id: &str, rerun_from_task_id: Option<&str>) -> TaskDef {
     let mut task = task_def(id, json!({ "type": "object" }));
     task.kind = TaskTypeDef::Agent {
         model_id: "test/model".to_string(),
+        thinking_level: None,
         provider_url: "".to_string(),
         prompt: "verify".to_string(),
         tools: vec![],

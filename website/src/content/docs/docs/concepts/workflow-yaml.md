@@ -78,6 +78,7 @@ kind:
   agent:
     model_id: "google/gemini-2.5-flash"
     provider_url: ""
+    thinking_level: medium
     prompt: Summarize the input.
     tools: []
     skills: []
@@ -85,6 +86,8 @@ kind:
     schema_failure_retry_times: 2
     reuse_session: true
 ```
+
+`thinking_level` is optional. See [Agent reasoning level](/relayfold/docs/concepts/tasks/agents/#reasoning-level) for accepted values and session behavior.
 
 Function task:
 

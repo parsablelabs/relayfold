@@ -1,9 +1,11 @@
 import type { TaskExecutor, JsonValue, TaskExecutionResult } from '../../core/ports/TaskExecutor.js';
 import type { TaskExecutionPayload } from '../../core/models/TaskDef.js';
 import type { CredentialsPort } from '../../core/ports/CredentialsPort.js';
-import { getModel } from '@earendil-works/pi-ai';
+import { createModelRuntime } from '../ModelRuntimeAdapter.js';
+import { withModelStreamErrors } from '../ModelStream.js';
+import type { ModelCredentialsPort } from '../../core/ports/ModelCredentialsPort.js';
 import { Agent } from '@earendil-works/pi-agent-core';
-import { AuthStorage, createAgentSession, createCodingTools, formatSkillsForPrompt, SessionManager, type Skill } from '@earendil-works/pi-coding-agent';
+import { createAgentSession, createCodingTools, formatSkillsForPrompt, SessionManager, type Skill } from '@earendil-works/pi-coding-agent';
 import { logger } from '../../utils/logger.js';
 import { createJsonSchemaValidator } from '../../core/JsonSchemaValidator.js';
 import { createBraveSearchTool } from './agent_tools/braveSearchTool.js';
@@ -270,6 +272,7 @@ export function buildAgentPromptParts(args: {
 }
 
 export class AgentExecutor implements TaskExecutor {
+    constructor(private readonly modelCredentials: ModelCredentialsPort) {}
     async execute(payload: TaskExecutionPayload, credentialsPort: CredentialsPort, sessionStore: SessionStore): Promise<TaskExecutionResult> {
         const agentDef = (payload.task.kind as any).agent;
         const modelIdFull = agentDef.model_id as string;
@@ -306,7 +309,8 @@ export class AgentExecutor implements TaskExecutor {
             throw new Error(`Invalid model_id format: '${modelIdFull}'. Expected a non-empty provider name.`);
         }
 
-        let model = getModel(providerName as any, modelName as any);
+        const modelRuntime = await createModelRuntime(this.modelCredentials);
+        let model = modelRuntime.getModel(providerName, modelName);
         if (!model) {
             throw new Error(`Model not found for ${providerName}/${modelName}`);
         }
@@ -356,10 +360,12 @@ export class AgentExecutor implements TaskExecutor {
         const { session } = await createAgentSession({
             sessionManager,
             model,
-            authStorage: AuthStorage.inMemory(),
+            modelRuntime,
+            thinkingLevel: agentDef.thinking_level,
         });
 
         const agent = session.agent;
+        agent.streamFunction = withModelStreamErrors(agent.streamFunction);
 
         // Tool use event handling
         agent.subscribe((event) => {

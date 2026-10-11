@@ -115,13 +115,8 @@ test("dry-run returns a draft and never posts", async () => {
   assert.deepEqual(result.created, []);
 });
 
-test("finding labels are published or passed to the shared label step", async () => {
-  for (const labels of [
-    ["bug"],
-    [],
-    ["relayfold:human-input-needed"],
-    ["bug", "relayfold:human-input-needed"],
-  ]) {
+test("finding bug labels are published directly", async () => {
+  for (const labels of [["bug"], []]) {
     for (const dry_run of [false, true]) {
       const posted = [];
       const run = createPublisher({
@@ -141,18 +136,10 @@ test("finding labels are published or passed to the shared label step", async ()
         ],
       });
       const issue = dry_run ? result.drafts[0] : posted[0];
-      assert.deepEqual(issue.labels, [
-        "relayfold",
-        ...(dry_run
-          ? labels
-          : labels.filter((label) => label !== "relayfold:human-input-needed")),
-      ]);
+      assert.deepEqual(issue.labels, ["relayfold", ...labels]);
       if (!dry_run) {
         assert.equal(result.created[0].issue_number, 1);
-        assert.equal(
-          result.created[0].human_input_needed,
-          labels.includes("relayfold:human-input-needed"),
-        );
+        assert.equal("human_input_needed" in result.created[0], false);
       }
       assert.equal(posted.length, dry_run ? 0 : 1);
     }

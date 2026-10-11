@@ -44,19 +44,19 @@ The first task requires one input object with the issue identifiers:
 }
 ```
 
-The requested issue must have the exact `relayfold` label. Issues without that label and pull request numbers fail the fetch task before implementation begins. Issues labeled `relayfold:pr-created` or `relayfold:human-input-needed` also fail fetching before implementation begins. Open and closed issues are otherwise accepted.
+Apply `relayfold:agent-ready` to the issue before starting the workflow. Without that label, fetching returns an exit reason and the workflow completes before implementation. Pull request numbers fail fetching. Open and closed issues are accepted. The old `relayfold` and `relayfold:human-input-needed` labels have no effect on eligibility. `relayfold:pr-created` remains an informational status label.
 
 ## Flow
 
 <pre class="mermaid">
 flowchart TD
     Input["Issue input: repository + issue_number"]
-    Fetch["fetch-issue-and-pr: Function reads relayfold-labeled issue"]
+    Fetch["fetch-issue-and-pr: Function checks agent-ready and resolves PR"]
     Implement["implement-change: edit shared repo workspace"]
     Review{"review-implementation accepts?"}
     PR["create-pull-request: commit, push, open PR"]
-    Mark["apply-labels: Function applies workflow status labels"]
-    Comment["update-github-issue: final status comment"]
+    Mark["apply-labels: Function marks PR and removes agent-ready"]
+    Comment["update-github-issue: Function posts marked change summary"]
     Done["Completed"]
     Clarify["InputNeeded: ask for clarification"]
     Failed["Failed: missing credentials or unrecoverable error"]
@@ -65,30 +65,35 @@ flowchart TD
     Implement --> Review
     Review -->|continue with feedback, bounded| Implement
     Review -->|accepted| PR
-    PR --> Mark
-    Mark --> Comment
-    Comment --> Done
+    PR --> Comment
+    Comment --> Mark
+    Mark --> Done
+    Fetch -->|no agent-ready: exit| Done
     Implement -. underspecified .-> Clarify
-    Fetch -. missing label, gh_token, or API failure .-> Failed
+    Fetch -. invalid input, missing gh_token, or API failure .-> Failed
     Implement -. task failure .-> Failed
     Review -. verifier failure .-> Failed
     PR -. gh failure .-> Failed
 </pre>
 
-1. `fetch-issue-and-pr` calls `github-issue-to-pr.fetch_issue_and_pr`, a deterministic Function that reads the issue and all comment pages through the [GitHub REST API](https://docs.github.com/en/rest/issues/issues#get-an-issue). It requires `relayfold`, rejects `relayfold:pr-created` and `relayfold:human-input-needed`, and returns `repository`, `issue_number`, `issue_url`, `title`, `state`, `body`, and `comments` (comment bodies). It makes no LLM calls. The implementation and review Agents interpret acceptance criteria from the original body and comments.
-2. `implement-change` receives the issue details, updates the checkout in the shared `repo` workspace, runs relevant checks, and can pause for clarification when the issue is underspecified.
-3. `review-implementation` checks the implementation against the issue criteria and test results. It can return `continue` with feedback, causing RelayFold to rerun from `implement-change` up to the bounded loop limit.
-4. `create-pull-request` runs after the verifier accepts the implementation, commits and pushes the branch, and creates the PR with `gh pr create`. The PR body includes a full link to the issue it addresses, a change summary, and test results. The Agent checks the published body and adds the issue link if missing, preserving existing content and avoiding duplicate links.
-5. `apply-labels` calls the shared `github.apply_labels` Function. It adds `relayfold:pr-created` when a PR was created, and `relayfold:human-input-needed` when the implementation output has unresolved `open_questions`. It can apply either label or both, creates missing repository labels, and confirms the [add-labels response](https://docs.github.com/en/rest/issues/labels#add-labels-to-an-issue) without replacing existing labels. If neither applies, it returns `applied: []` without GitHub calls.
-6. `update-github-issue` waits for labeling to finish and adds the final status comment. A labeling failure stops the workflow before this comment.
+1. `fetch-issue-and-pr` calls `github-issue-to-pr.fetch_issue_and_pr`, a deterministic Function that checks `relayfold:agent-ready`, reads all issue comments, and resolves an existing PR from the issue summary link or explicit `pr_number`. For an existing PR, it fetches its discussion and reviews and selects the latest developer conversation comment as `change_request`. It makes no LLM calls.
+2. `implement-change` edits the shared `repo` workspace. For fresh issues it implements the issue criteria; for existing PRs it checks out the PR branch and focuses on `change_request`, preserving existing work. Missing information pauses the run through `ask_user` and resumes with the human's answer.
+3. `review-implementation` checks the issue criteria, requested update, and test results. It can return `continue` with feedback, rerunning from `implement-change` within the bounded loop limit.
+4. `create-pull-request` commits and pushes after verification. It creates a PR for a fresh issue or updates the existing PR branch. New PR bodies include the issue URL, change summary, and tests; the Agent verifies the published issue link.
+5. `update-github-issue` calls `github-issue-to-pr.update_issue` to post a summary headed **RelayFold — PR created**, **RelayFold — PR updated**, or **RelayFold — No PR needed**. It includes a stable hidden `<!-- relayfold:issue-to-pr -->` marker, the change summary, tests, PR link, and instruction-comment link when available. This distinguishes automation summaries from developer requests. Unresolved questions prevent completion.
+6. `apply-labels` calls `github.apply_labels` only after the summary succeeds. It adds or retains `relayfold:pr-created` for a new or reused PR, then removes `relayfold:agent-ready` without replacing other labels. Successful no-work runs also consume readiness. Failures before completion retain the trigger for retry.
 
-For issues labeled `relayfold:human-input-needed`, a human must supply the missing information in an issue comment and remove that label before rerunning. The PR-created marker remains after the PR is closed or merged. Remove it deliberately when you want another implementation attempt. This guard prevents later runs from picking up marked issues; it does not lock concurrent runs or discover existing PRs that have no marker. If labeling fails after PR creation, apply the marker before starting another full workflow run.
+If review finds unsupported assumptions about critical behavior or scope, it rejects the implementation with feedback naming the assumptions, affected files and behavior, missing requirements, and specific questions for the human. On retry, `implement-change` calls `ask_user` with those questions before revising the affected code. The workflow pauses for human input, then implementation uses the answers while preserving earlier clarifications and accepted corrections. For example, if an issue asks for retries without specifying which failures are retryable, review can ask implementation to clarify that decision with the human instead of choosing a retry policy itself. These retries use the existing bounded verifier loop.
+
+To request another update, post the requested changes in a PR conversation comment, reapply `relayfold:agent-ready` to the issue, and start the workflow. Bot comments and marked RelayFold summaries are excluded when selecting feedback. Inline comments and review summaries provide context but do not select the request. Labels do not lock concurrent runs; finish the current run before requesting the next update. Existing human-input labels can be removed manually, but they no longer block the workflow.
+
+`implement-change` and `review-implementation` use `thinking_level: medium`; `create-pull-request` uses `low`. Fetching, summary publication, and labeling are Functions. See [Agent reasoning level](/relayfold/docs/concepts/tasks/agents/#reasoning-level) for model support and session behavior.
 
 All Agent tasks use the same `workspace.group_name: repo` so files produced or edited by one step are visible to later steps.
 
 ## Register the workflow
 
-First build, test, and register the fetch Function and shared labeling Function from a local checkout (Node.js 24 or newer; no npm dependencies are required):
+First build, test, and register the fetch and summary Functions and shared labeling Function from a local checkout (Node.js 24 or newer; no npm dependencies are required):
 
 ```bash
 cd examples/github_issue_to_pr/functions
@@ -96,6 +101,8 @@ npm test
 export RELAYFOLD_URL=http://localhost:3000
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/github-issue-to-pr.fetch_issue_and_pr.json
+curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
+  --data-binary @dist/github-issue-to-pr.update_issue.json
 cd ../../functions
 npm test
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
@@ -119,7 +126,7 @@ Replace the repository and issue number with the issue you want the workflow to
 implement:
 
 ```bash
-curl -fsS -X POST "$RELAYFOLD_URL/workflow-def/github-issue-pr-workflow" \
+curl -fsS -X POST "$RELAYFOLD_URL/workflow-def/github-issue-to-pr" \
   -H 'content-type: application/json' \
   -d '{
     "repository": "parsablelabs/relayfold",
@@ -141,24 +148,31 @@ For a recurring workflow that analyzes production logs and files issues, see
 
 ### Continue an existing pull request
 
-Add optional `pr_number` to the input, for example
-`{ "repository": "owner/repo", "issue_number": 7, "pr_number": 12 }`.
-The PR must belong to the input repository. The fetch Function includes an optional
-`pr` object with `pr_number`, `pr_url`, `title`, `body`, uppercase `state`,
-`branch`, and all pages of `comments` (conversation bodies), `review_comments`
-(inline review bodies), and `reviews` (review summary bodies). GitHub errors or
-incomplete pagination fail the task rather than passing partial context.
-See GitHub's [review comments API](https://docs.github.com/en/rest/pulls/comments)
-and [issue comments API](https://docs.github.com/en/rest/issues/comments).
+Apply `relayfold:agent-ready` to the issue after posting feedback on its PR. The
+fetch Function resolves the PR from its same-repository link in the latest marked
+RelayFold issue summary. For legacy issues, an unambiguous PR link in issue
+comments is accepted. You can supply `pr_number` explicitly:
 
-Implementation checks out the supplied PR head branch and continues from its
-existing implementation. It treats requested changes in PR conversation comments,
-inline review comments, and review summaries as implementation instructions alongside
-the issue acceptance criteria, accounting for later clarifications and feedback
-already addressed. Conflicting instructions that require a critical decision trigger
-`ask_user`. Verifier retries preserve the ongoing work on the same PR branch. Review receives the same context, and publication pushes to the existing
-branch without creating a duplicate PR. The final issue comment links to the reused
-PR. `pr_created` remains false for a reused PR, so reuse does not add the
-`relayfold:pr-created` label. Existing issue-label guards still apply: remove a
-blocking label deliberately before rerunning. Closed or merged PR details can be
-fetched; the Agents must inspect their state before deciding how to proceed.
+```json
+{
+  "repository": "owner/repo",
+  "issue_number": 7,
+  "pr_number": 12
+}
+```
+
+Multiple candidate links, or a `relayfold:pr-created` issue without a resolvable
+link, fail with instructions to supply `pr_number`. PRs without an issue summary
+link must be supplied explicitly. A PR without a nonempty developer conversation
+comment also fails; post the requested changes before starting the run.
+
+The fetch result includes `pr` with its identifiers, body, branch, state, and all
+conversation comments, inline comments, and reviews. `change_request` contains the
+latest developer conversation comment's body and URL. Implementation and review
+focus on that request while using the issue criteria and older discussion as
+context. Verifier retries preserve ongoing work on the same PR branch. Publication
+pushes to that PR and returns `pr_created: false` for reuse. A closed or merged PR
+that prevents continuation requires clarification through `ask_user`.
+
+If PR publication succeeds but summary posting fails, supply that PR’s `pr_number`
+when starting another run so it continues the published branch.

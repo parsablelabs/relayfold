@@ -11,6 +11,18 @@ fn default_true() -> bool {
     true
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ThinkingLevel {
+    Off,
+    Minimal,
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TaskTypeDef {
     #[serde(rename = "apiCall")]
@@ -24,6 +36,8 @@ pub enum TaskTypeDef {
     Agent {
         // Model name, e.g. sonnet, oput, gpt-5.5, gemini-2.5-flash, etc.
         model_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thinking_level: Option<ThinkingLevel>,
         provider_url: String,
         // Agent prompt
         prompt: String,
@@ -184,6 +198,31 @@ pub enum WorkspaceKey {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn agent_thinking_level_is_optional_validated_and_preserved() {
+        let mut value = json!({ "agent": {
+            "model_id": "openai-codex/gpt-6.1-sol", "provider_url": "",
+            "prompt": "Review.", "tools": [], "skills": [], "ask": false,
+            "schema_failure_retry_times": 0
+        }});
+        let omitted: TaskTypeDef = serde_json::from_value(value.clone()).unwrap();
+        assert!(serde_json::to_value(omitted).unwrap()["agent"]
+            .get("thinking_level")
+            .is_none());
+        for level in ["off", "minimal", "low", "medium", "high", "xhigh", "max"] {
+            value["agent"]["thinking_level"] = json!(level);
+            let task: TaskTypeDef = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(
+                serde_json::to_value(task).unwrap()["agent"]["thinking_level"],
+                level
+            );
+        }
+        for invalid in [json!("ultra"), json!(3)] {
+            value["agent"]["thinking_level"] = invalid;
+            assert!(serde_json::from_value::<TaskTypeDef>(value.clone()).is_err());
+        }
+    }
 
     #[test]
     fn agent_reuse_session_defaults_to_true_when_omitted() {

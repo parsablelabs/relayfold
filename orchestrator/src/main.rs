@@ -21,6 +21,17 @@ use orchestrator::ports::storage::StoragePort;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    use orchestrator::auth::cli::{self, Command};
+    let command = cli::parse(&std::env::args().skip(1).collect::<Vec<_>>())?;
+    match command {
+        Command::Help => {
+            print!("{}", cli::HELP);
+            return Ok(());
+        }
+        Command::Start => {}
+        command => return cli::run(command).await,
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse()?))
         .init();
@@ -62,7 +73,14 @@ async fn main() -> anyhow::Result<()> {
         worker_registry.clone(),
         namespace_resolver,
     );
-    let worker_app = router::create_worker_router(worker_registry.clone(), task_dispatcher.clone());
+
+    let auth_service = orchestrator::auth::AuthService::new(
+        orchestrator::auth::store::FileCredentialStore::from_environment()?,
+        Arc::new(orchestrator::auth::codex::CodexProvider::new()?),
+    );
+
+    let worker_app = router::create_worker_router(worker_registry.clone(), task_dispatcher.clone())
+        .merge(orchestrator::auth::router(auth_service));
 
     let public_addr = resolve_public_http_addr();
     let worker_addr = resolve_worker_http_addr();

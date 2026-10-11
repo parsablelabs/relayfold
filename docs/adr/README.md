@@ -9,6 +9,6 @@
 Current behavioral requirements live in `openspec/specs/`.
 User-facing behavior is documented under `website/`.
 
-Proposed designs:
+Accepted designs:
 
 - [Centralized subscription authentication with Pi workers](active/0003-pi-subscription-authentication.md)

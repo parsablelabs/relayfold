@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-10
 ---
 
@@ -9,10 +9,10 @@ RelayFold users want Agent tasks to use subscription-backed model providers,
 starting with Codex. The agreed architecture centralizes OAuth login, credential
 storage, and token refresh in the Rust orchestrator. Workers keep Pi as the agent
 runtime and translate the orchestrator's access credentials into Pi authentication.
-This record includes agreed decisions and remaining questions; it does not
-represent shipped behavior.
+This record describes the agreed architecture and its Codex implementation.
+Live provider compatibility remains a manual developer verification step.
 
-## Current behavior
+## Behavior before this change
 
 - `AgentExecutor` resolves the provider and model from `model_id` through Pi's
   `getModel`, then creates a session with empty `AuthStorage.inMemory()`.
@@ -83,6 +83,12 @@ orchestrator, separate from the worker's named string-secret file. This design
 initially targets a single orchestrator instance. Persist credentials in a
 writable deployment directory with restrictive permissions, atomic updates, and
 coordination between CLI operations and the running server.
+
+Docker deployments bind-mount the host OAuth directory into the orchestrator,
+allowing local CLI login before the server starts. The host CLI and container
+share the same writable directory and compatible ownership; existing store
+locking coordinates login, logout, and renewal. Workers do not mount this
+directory and continue retrieving access tokens through the orchestrator API.
 
 Preserve provider token-response fields such as `access_token`, `refresh_token`,
 and `token_type`, retaining only the response and context fields needed for use
@@ -314,3 +320,34 @@ Subscription access remains subject to each provider's permitted integration,
 account entitlements, and limits. Preserve API-key execution alongside it. Codex
 is the initial implementation; support for Claude, Gemini, or custom OAuth
 providers is a separate implementation and compatibility decision.
+
+## Implementation and verification
+
+The Codex implementation provides `orchestrator start`, `login [openai-codex]`,
+`logout [openai-codex]`, and `auth-status`. Credentials persist in
+`RELAYFOLD_OAUTH_DIR` (default `~/.relayfold/oauth`) as `openai-codex.json`, with a
+separate stable file lock coordinating CLI changes and server refresh. Updates
+use an atomic rename and restrictive file permissions.
+
+Workers request `POST /workers/auth/{provider}` on the existing worker API.
+The initial implementation supports only `openai-codex`; unsupported providers
+return HTTP 404 without accessing the credential store.
+The orchestrator refreshes within one minute of expiry and returns only
+`access_token` and `expires_at`, with `Cache-Control: no-store`. Pi's request-time
+auth resolver supplies the access token to its Codex provider, which derives its
+account header from provider-issued token claims. Existing environment-key
+providers use the original Pi resolution path.
+
+Workers use Pi `0.99.1` and its `ModelRuntime` API with an in-memory credential
+store. The Codex provider delegates request-time authentication to the
+orchestrator; configuration checks do not fetch tokens, and no OAuth credentials
+are persisted by workers. The native Codex model catalog includes `gpt-6.1-sol`.
+Worker images use Node.js 24 to satisfy Pi's Node.js 22.19.0 minimum.
+
+The implementation uses the Codex OAuth client, endpoints, and scope set of the
+installed Pi adapter (`openid profile email offline_access`), with RelayFold as
+originator. The developer must verify live that this route is usable and that
+these are the required minimum scopes; automated tests do not establish provider
+permission or subscription entitlement. Browser login, remote callback completion,
+live inference, and inference after renewal have not been exercised during this
+implementation. No additional provider is enabled.

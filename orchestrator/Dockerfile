@@ -22,10 +22,12 @@ LABEL org.opencontainers.image.source="https://github.com/parsablelabs/relayfold
 RUN apk add --no-cache ca-certificates \
     && addgroup -g 10001 relayfold \
     && adduser -D -h /home/relayfold -u 10001 -G relayfold relayfold \
-    && mkdir -p /var/lib/relayfold /workspaces \
-    && chown relayfold:relayfold /var/lib/relayfold /workspaces
+    && mkdir -p /var/lib/relayfold/oauth /workspaces \
+    && chown relayfold:relayfold /var/lib/relayfold /var/lib/relayfold/oauth /workspaces
 COPY --from=builder /app/target/release/orchestrator /usr/local/bin/orchestrator
 USER relayfold
 
 EXPOSE 3000 3001
 ENTRYPOINT ["/usr/local/bin/orchestrator"]
+
+CMD ["start"]

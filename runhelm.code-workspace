@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "orchestrator"
+		},
+		{
+			"path": "frontend"
+		},
+		{
+			"path": "worker"
+		}
+	],
+	"settings": {}
+}
