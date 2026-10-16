@@ -168,7 +168,48 @@ pub struct WorkflowDef {
     #[serde(default)]
     pub description: String,
     pub tasks: Vec<TaskDef>,
+    #[serde(deserialize_with = "deserialize_data_bindings")]
     pub data_bindings: Vec<DataBinding>,
+}
+
+/// Expand authoring shorthand into the individual edges used throughout the runtime.
+fn deserialize_data_bindings<'de, D>(deserializer: D) -> Result<Vec<DataBinding>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct Binding {
+        source_task_id: String,
+        target_task_id: serde_json::Value,
+    }
+
+    let bindings = Vec::<Binding>::deserialize(deserializer)?;
+    let mut expanded = Vec::new();
+    for binding in bindings {
+        let targets = match binding.target_task_id {
+            serde_json::Value::String(target) => vec![target],
+            serde_json::Value::Array(targets) if !targets.is_empty() => targets
+                .into_iter()
+                .enumerate()
+                .map(|(index, target)| match target {
+                    serde_json::Value::String(target) => Ok(target),
+                    _ => Err(serde::de::Error::custom(format!(
+                        "data binding target_task_id[{index}] must be a task ID string"
+                    ))),
+                })
+                .collect::<Result<Vec<_>, D::Error>>()?,
+            _ => {
+                return Err(serde::de::Error::custom(
+                    "data binding target_task_id must be a task ID string or a non-empty list of task ID strings",
+                ));
+            }
+        };
+        expanded.extend(targets.into_iter().map(|target_task_id| DataBinding {
+            source_task_id: binding.source_task_id.clone(),
+            target_task_id,
+        }));
+    }
+    Ok(expanded)
 }
 
 /// Compact workflow definition metadata for discovery and selection.
@@ -190,6 +231,60 @@ pub struct StartupWorkflowDiscovery {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn data_bindings_expand_scalar_list_and_mixed_syntax_in_order() {
+        let yaml = "id: example\ntasks: []\ndata_bindings:\n  - source_task_id: a\n    target_task_id: [b, c]\n  - source_task_id: b\n    target_task_id: c\n  - source_task_id: c\n    target_task_id: [d]\n";
+        let expected = serde_json::json!([
+            {"source_task_id": "a", "target_task_id": "b"},
+            {"source_task_id": "a", "target_task_id": "c"},
+            {"source_task_id": "b", "target_task_id": "c"},
+            {"source_task_id": "c", "target_task_id": "d"},
+        ]);
+        let from_yaml: WorkflowDef = serde_yaml::from_str(yaml).unwrap();
+        let value: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
+        let from_json: WorkflowDef = serde_json::from_value(value).unwrap();
+        for definition in [from_yaml, from_json] {
+            let serialized = serde_json::to_value(definition).unwrap();
+            assert_eq!(serialized["data_bindings"], expected);
+            let round_trip: WorkflowDef = serde_json::from_value(serialized).unwrap();
+            assert_eq!(
+                serde_json::to_value(round_trip.data_bindings).unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn data_bindings_reject_empty_lists_and_non_string_targets() {
+        for target in [
+            "[]",
+            "null",
+            "42",
+            "true",
+            "{}",
+            "[b, 42]",
+            "[b, true]",
+            "[b, null]",
+            "[b, {}]",
+            "[b, [c]]",
+        ] {
+            let yaml = format!(
+                "id: example\ntasks: []\ndata_bindings:\n  - source_task_id: a\n    target_task_id: {target}\n"
+            );
+            let error = serde_yaml::from_str::<WorkflowDef>(&yaml).unwrap_err();
+            assert!(
+                error.to_string().contains("target_task_id"),
+                "{target}: {error}"
+            );
+            let value: serde_json::Value = serde_yaml::from_str(&yaml).unwrap();
+            let error = serde_json::from_value::<WorkflowDef>(value).unwrap_err();
+            assert!(
+                error.to_string().contains("target_task_id"),
+                "{target}: {error}"
+            );
+        }
+    }
 
     #[test]
     fn workflow_example_input_round_trips_json_values_and_omits_absent_examples() {

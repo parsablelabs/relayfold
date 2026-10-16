@@ -167,8 +167,6 @@ tasks:
 
 data_bindings:
   - source_task_id: fetch_inbound_mail
-    target_task_id: match_workflows
-  - source_task_id: fetch_inbound_mail
-    target_task_id: dispatch_and_reply
+    target_task_id: [match_workflows, dispatch_and_reply]
   - source_task_id: match_workflows
     target_task_id: dispatch_and_reply

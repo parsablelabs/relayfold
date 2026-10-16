@@ -359,26 +359,12 @@ tasks:
 
 data_bindings:
   - source_task_id: fetch-issue-and-pr
-    target_task_id: implement-change
+    target_task_id: [implement-change, review-implementation, create-pull-request, update-github-issue, apply-labels]
+  - source_task_id: create-pull-request
+    target_task_id: [update-github-issue, apply-labels]
   - source_task_id: implement-change
-    target_task_id: review-implementation
-  - source_task_id: fetch-issue-and-pr
-    target_task_id: review-implementation
-  - source_task_id: fetch-issue-and-pr
-    target_task_id: create-pull-request
-  - source_task_id: implement-change
-    target_task_id: create-pull-request
+    target_task_id: [review-implementation, create-pull-request, apply-labels]
   - source_task_id: review-implementation
     target_task_id: create-pull-request
-  - source_task_id: fetch-issue-and-pr
-    target_task_id: update-github-issue
-  - source_task_id: create-pull-request
-    target_task_id: update-github-issue
-  - source_task_id: fetch-issue-and-pr
-    target_task_id: apply-labels
-  - source_task_id: create-pull-request
-    target_task_id: apply-labels
-  - source_task_id: implement-change
-    target_task_id: apply-labels
   - source_task_id: apply-labels
     target_task_id: update-github-issue

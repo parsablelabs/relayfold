@@ -127,13 +127,25 @@ this complete response value before it can flow to downstream tasks.
 
 ## Data bindings
 
-Data bindings pass one task's output into another task's input array:
+Data bindings pass a source task's output into each target task's input array.
+Set `source_task_id` to the source task ID and `target_task_id` to a non-empty
+list of target task IDs:
 
 ```yaml
 data_bindings:
   - source_task_id: fetch-data
-    target_task_id: summarize
+    target_task_id: [summarize, archive]
+  - source_task_id: summarize
+    target_task_id: [publish]
 ```
+
+Each target receives the same source output and waits for the source task to
+satisfy its dependency, including any verifier-loop requirements. Every target
+must reference a task defined in the workflow and follow the task ID rules.
+Empty lists and non-string items are rejected.
+
+The CloudWatch scanner, GitHub issue-to-PR, and Mailgun dispatcher examples use
+target lists wherever one task supplies output to multiple downstream tasks.
 
 If a task has multiple upstream bindings, it receives multiple input values. The target task should declare `input_schemas` when it depends on specific input shapes.
 

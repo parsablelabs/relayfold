@@ -368,23 +368,13 @@ data_bindings:
   - source_task_id: scan-cloudwatch
     target_task_id: prune-covered-logs
   - source_task_id: fetch-issues
-    target_task_id: prune-covered-logs
-  - source_task_id: fetch-issues
-    target_task_id: analyze-main
-  - source_task_id: fetch-issues
-    target_task_id: verify-analysis
+    target_task_id: [prune-covered-logs, analyze-main, verify-analysis]
   - source_task_id: prune-covered-logs
-    target_task_id: select-group
-  - source_task_id: prune-covered-logs
-    target_task_id: prepare-selected-group
+    target_task_id: [select-group, prepare-selected-group]
   - source_task_id: select-group
     target_task_id: prepare-selected-group
   - source_task_id: prepare-selected-group
-    target_task_id: analyze-main
-  - source_task_id: prepare-selected-group
-    target_task_id: publish-issues
-  - source_task_id: prepare-selected-group
-    target_task_id: verify-analysis
+    target_task_id: [analyze-main, publish-issues, verify-analysis]
   - source_task_id: analyze-main
     target_task_id: verify-analysis
   - source_task_id: verify-analysis
