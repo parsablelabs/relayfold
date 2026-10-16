@@ -1019,6 +1019,50 @@ mod tests {
         assert!(decode_workflow_info_cursor(&namespace, &cursor).is_err());
     }
 
+    #[test]
+    fn list_binding_targets_use_scalar_reference_validation_and_normalization() {
+        for (targets, expected_error) in [
+            (json!(["Task-B", "Task_C"]), None),
+            (
+                json!(["Task-B", "missing"]),
+                Some("data binding target references unknown task id missing"),
+            ),
+            (
+                json!(["Task-B", "bad.id"]),
+                Some("data binding target id \"bad.id\" must contain only"),
+            ),
+            (
+                json!(["Task-B", ""]),
+                Some("data binding target id \"\" must contain only"),
+            ),
+        ] {
+            let mut value =
+                serde_json::to_value(workflow_def_with_task("workflow", "Task_A")).unwrap();
+
+            value["tasks"] = json!([
+                workflow_def_with_task("workflow", "Task_A").tasks[0],
+                workflow_def_with_task("workflow", "Task-B").tasks[0],
+                workflow_def_with_task("workflow", "Task_C").tasks[0],
+            ]);
+            value["data_bindings"] =
+                json!([{"source_task_id": "Task_A", "target_task_id": targets}]);
+
+            let def = serde_json::from_value(value).unwrap();
+
+            let result = validate_and_normalize_workflow_def(def);
+
+            if let Some(expected) = expected_error {
+                assert!(result.unwrap_err().to_string().contains(expected));
+            } else {
+                let def = result.unwrap();
+                assert_eq!(def.data_bindings[0].source_task_id, "task_a");
+                assert_eq!(def.data_bindings[0].target_task_id, "task-b");
+                assert_eq!(def.data_bindings[1].source_task_id, "task_a");
+                assert_eq!(def.data_bindings[1].target_task_id, "task_c");
+            }
+        }
+    }
+
     fn workflow_def(id: &str) -> WorkflowDef {
         workflow_def_with_task(id, "taska")
     }
