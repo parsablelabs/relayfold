@@ -8,6 +8,7 @@ import type { TaskExecutionResult } from './core/ports/TaskExecutor.js';
 import { materializeTaskWorkspace } from './core/WorkspaceManager.js';
 
 import * as os from 'os';
+import { randomUUID } from 'node:crypto';
 import { logger } from './utils/logger.js';
 
 const DEFAULT_ORCHESTRATOR_HTTP_URL = 'http://127.0.0.1:3001';
@@ -66,7 +67,7 @@ class HttpError extends Error {
 }
 
 function createWorkerId(): string {
-    return process.env.WORKER_ID || `${os.hostname()}-${process.pid}`;
+    return process.env.WORKER_ID || `${os.hostname()}-${randomUUID()}`;
 }
 
 function requiredWorkerHostId(): string {

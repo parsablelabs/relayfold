@@ -80,8 +80,40 @@ docker compose up -d --scale worker=4
 ```
 
 Worker processes need unique worker IDs. By default, RelayFold derives an ID from
-the worker hostname and process ID. Set `WORKER_ID` explicitly only when your
-runtime cannot provide unique values.
+the worker hostname and a random UUID generated at startup, including when
+containers share host networking. If you set `WORKER_ID` explicitly, give each
+worker process a unique value.
+
+### Container workers with a local orchestrator
+
+For Linux development from the source checkout, run the orchestrator on the
+host and two container workers with:
+
+```bash
+scripts/run-local-dev.sh
+```
+
+The script builds the orchestrator using the local Cargo cache, builds and starts
+only the Compose workers, and runs the orchestrator in the foreground. Ctrl-C
+stops the workers. Pass `--skip-build` to reuse the existing orchestrator binary;
+worker images are still built. Storage and logging settings use the same
+environment variables as `scripts/run-orchestrator-dev.sh`.
+
+To manage the processes separately, run `scripts/run-orchestrator-dev.sh` in one
+terminal and start workers in another:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local-workers.yml up -d --build --no-deps worker
+```
+
+The override uses host networking so workers can reach the orchestrator at
+`http://127.0.0.1:3001`. `--no-deps` skips starting the Compose orchestrator.
+Keep the local orchestrator's worker API on the default `127.0.0.1:3001` address
+when using this override. Stop any Compose orchestrator already using port 3000
+before starting the local process. The root Compose file continues to use
+`http://orchestrator:3001` for the full container stack.
+The base Compose configuration starts two workers. When switching an existing
+worker deployment to this override, Compose recreates the worker containers.
 
 ### Host identity and shared state
 

@@ -97,7 +97,7 @@ host identity, see the website documentation:
 | `RELAYFOLD_ORCHESTRATOR_HTTP_URL` | `http://127.0.0.1:3001` | Worker API base URL used for registration, task claiming, and task completion. |
 | `RELAYFOLD_WORKER_HOST_ID` | required | Stable host identity. Workers sharing durable workspace and session roots must use the same value. |
 | `RELAYFOLD_WORKSPACE_ROOT` | `$HOME/.cache/relayfold/workspaces` | Root for task workspaces. The Docker Compose worker uses `/workspaces`. |
-| `WORKER_ID` | hostname plus process ID | Worker identity sent during registration. |
+| `WORKER_ID` | hostname plus random UUID | Worker identity sent during registration. |
 | `RELAYFOLD_FUNCTION_TIMEOUT_MS` | `300000` | Timeout for Function dependency installation and execution. |
 | `RELAYFOLD_TASK_TIMEOUT_SECS` | `300` | Fallback timeout for tasks without `timeout_secs`. |
 | `RELAYFOLD_AGENT_EXTENSION_PATHS` | unset | Comma-separated Pi extension files, directories, or package roots. Relative paths resolve from the worker process directory. |
