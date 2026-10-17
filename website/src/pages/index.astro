@@ -1,5 +1,5 @@
 ---
-import WorkflowFlow from '../components/WorkflowFlow';
+import FeatureShowcase from '../components/FeatureShowcase.astro';
 
 const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/`;
 const url = (path: string) => `${base}${path}`;
@@ -235,97 +235,11 @@ rf up`;
         padding-top: 72px;
       }
 
-      .workflow-showcase {
-        padding-top: 24px;
-      }
-
-      .demo-video {
-        width: 75%;
-        aspect-ratio: 16 / 9;
-        margin-top: 28px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: #111923;
-        box-shadow: 0 18px 48px rgba(21, 32, 43, 0.08);
-        overflow: hidden;
-      }
-
-      .demo-video iframe {
-        display: block;
-        width: 100%;
-        height: 100%;
-        border: 0;
-      }
-
       .section > p {
         max-width: 760px;
         margin-top: 14px;
         color: var(--muted);
         font-size: 18px;
-      }
-
-      .feature-grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 16px;
-        margin-top: 28px;
-      }
-
-      .feature {
-        min-height: 190px;
-        padding: 18px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--panel);
-      }
-
-      .feature p {
-        margin-top: 10px;
-        color: var(--muted);
-      }
-
-      .fit-panel {
-        margin-top: 28px;
-        padding: clamp(24px, 5vw, 48px);
-        border-radius: 8px;
-        background: #111923;
-        color: #eef5fb;
-      }
-
-      .fit-list {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 14px 28px;
-        margin: 0;
-        padding: 0;
-        list-style: none;
-      }
-
-      .fit-list li {
-        display: flex;
-        gap: 10px;
-        align-items: baseline;
-        font-size: 18px;
-      }
-
-      .fit-list li::before {
-        content: "✓";
-        flex: 0 0 auto;
-        color: #65d6b8;
-        font-weight: 900;
-      }
-
-      .fit-conclusion {
-        max-width: 760px;
-        margin-top: 30px;
-        padding-top: 24px;
-        border-top: 1px solid rgba(238, 245, 251, 0.18);
-        color: #c9d7e4;
-        font-size: 20px;
-      }
-
-      .fit-conclusion strong {
-        color: #fff;
       }
 
       .install {
@@ -387,14 +301,6 @@ rf up`;
         .hero {
           min-height: auto;
         }
-
-        .feature-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .fit-list {
-          grid-template-columns: 1fr;
-        }
       }
     </style>
   </head>
@@ -416,11 +322,15 @@ rf up`;
     <main>
       <section class="hero">
         <div>
-          <!--<p class="eyebrow">Distributed, provider-agnostic agentic workflows</p>-->
-          <h1>Run agent workflows you can resume, inspect, and verify.</h1>
+          <h1>RelayFold puts your agent skills on rails.</h1>
           <p class="hero-copy">
-            RelayFold is a lightweight framework for composing AI agents,
-            functions, and API calls into reliable, observable workflows.
+            As your <code>SKILL.md</code> grows into a workflow, prompts and scripts alone leave
+            the agent responsible for following the process: which steps run,
+            in what order, and what happens when something fails. RelayFold
+            makes that process explicit. Compose agents, scripts, and API calls
+            into structured workflows with pause and resume, failed-step retries,
+            verifier feedback loops, and an API to inspect and control execution.
+            Run them locally or distribute execution across workers.
           </p>
 
           <div class="actions">
@@ -430,92 +340,7 @@ rf up`;
         </div>
       </section>
 
-      <section class="section workflow-showcase" aria-label="RelayFold stock report workflow">
-          <p class="eyebrow">How it works</p>
-          <aside class="system-panel" aria-label="RelayFold stock report workflow">
-            <WorkflowFlow client:load />
-          </aside>
-      </section>
-
-      <section class="section" aria-labelledby="human-input-demo">
-        <p class="eyebrow">Demo: implement Github issue workflow</p>
-        <p>
-          Watch RelayFold run an Agent workflow designed to take repository name and issue number as input, implement and test the change, review changes and finally submit a PR.
-        </p>
-        <div class="demo-video">
-          <iframe
-            src="https://www.youtube-nocookie.com/embed/I_K8rPmwRc4"
-            title="RelayFold GitHub issue implementation workflow demo"
-            loading="lazy"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            referrerpolicy="strict-origin-when-cross-origin"
-            allowfullscreen
-          ></iframe>
-        </div>
-      </section>
-
-      <section class="section">
-        <h2>A deterministic control plane for agent work.</h2>
-        <p>
-          RelayFold treats agents as workflow nodes. The same execution model
-          applies to agent tasks, function tasks, and API-call tasks, so each
-          step can be scheduled, inspected, retried, and wired to downstream
-          work.
-        </p>
-
-        <div class="feature-grid">
-          <article class="feature">
-            <h3>Provider-agnostic agents</h3>
-            <p>
-              Select the model and provider for each agent task while keeping
-              the workflow structure and execution model consistent.
-            </p>
-          </article>
-          <article class="feature">
-            <h3>Workflow orchestration</h3>
-            <p>
-              Define tasks, dependencies, data bindings, and optional schemas
-              so each run has a deterministic control plane.
-            </p>
-          </article>
-          <article class="feature">
-            <h3>Distributed workers</h3>
-            <p>
-              Add worker instances to increase execution capacity. Workers
-              register with an orchestrator, claim queued tasks, and execute
-              agent, function, or API payloads in isolation.
-            </p>
-          </article>
-          <article class="feature">
-            <h3>Observable and resumable</h3>
-            <p>
-              Inspect run state and persisted transitions so workflows can
-              pause for input, resume, retry, and continue after feedback.
-            </p>
-          </article>
-        </div>
-      </section>
-
-      <section class="section">
-        <h2>Is RelayFold the right fit for you?</h2>
-        <p>
-          RelayFold may be a good fit if <strong>you need to:</strong>
-        </p>
-
-        <div class="fit-panel">
-          <ul class="fit-list">
-            <li>Have a deterministic workflow with agentic steps?</li>
-            <li>Have rich API to manage the system and execution environment?</li>
-            <li>Resume after failure?</li>
-            <li>Understand what happened through state change events?</li>
-            <li>Verify AI agents are doing the right thing and self-correct?</li>
-            <li>Have full ownership over deployment environment?</li>
-          </ul>
-          <p class="fit-conclusion">
-            If your answer is <strong>yes</strong> to these questions, RelayFold is for you!
-          </p>
-        </div>
-      </section>
+      <FeatureShowcase />
 
       <section class="section">
         <h2>Start locally with Docker.</h2>
@@ -540,13 +365,6 @@ rf up`;
         </div>
       </section>
 
-      <section class="section" aria-labelledby="built-with-pi">
-        <h3 id="built-with-pi">Built with Pi.</h3>
-        <p>
-          RelayFold's Agent runtime is built on the excellent <a href="https://github.com/earendil-works/pi-mono">Pi coding agent</a> project, which provides its underlying agent session, model, tool,
-          and skill capabilities.
-        </p>
-      </section>
     </main>
   </body>
 </html>
