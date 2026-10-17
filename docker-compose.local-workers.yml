@@ -1,4 +1,4 @@
-# Linux development: container workers connect to an orchestrator on the host.
+# Local development: container workers connect to an orchestrator on the host.
 # Use with docker-compose.yml and start worker with --no-deps.
 services:
   worker:

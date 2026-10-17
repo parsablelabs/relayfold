@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::time::{self, Duration, MissedTickBehavior};
-use tracing::{error, info};
+use tracing::{error, info, debug};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -106,7 +106,7 @@ async fn run_scheduler(
         env::var(RELAYFOLD_SCHEDULER_ENABLED).map_or(false, |v| v.parse::<bool>().unwrap_or(false));
 
     if !is_enabled {
-        info!("scheduler disabled");
+        debug!("scheduler disabled");
         return;
     }
 

@@ -6,7 +6,7 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 case "${1:-}" in
   -h|--help)
     echo "Usage: scripts/run-local-dev.sh [--skip-build]"
-    echo "Run the orchestrator on the Linux host and two workers in Docker Compose."
+    echo "Run the orchestrator on the host and two workers in Docker Compose."
     echo "Uses run-orchestrator-dev.sh environment settings; Ctrl-C stops the workers."
     exit 0
     ;;
@@ -16,11 +16,6 @@ esac
 if [[ $# -gt 1 ]]; then
   echo "Usage: scripts/run-local-dev.sh [--skip-build]" >&2
   exit 2
-fi
-
-if [[ "$(uname -s)" != Linux ]]; then
-  echo "This script requires Linux host networking." >&2
-  exit 1
 fi
 
 compose=(docker compose -f "$repo_root/docker-compose.yml" -f "$repo_root/docker-compose.local-workers.yml")
