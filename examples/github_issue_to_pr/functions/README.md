@@ -14,7 +14,49 @@ Output contains `repository`, `issue_number`, `issue_url`, `title`, uppercase
 and review Agents interpret acceptance criteria from the original body and comments.
 No generated summary or extracted acceptance-criteria field is needed.
 
+<<<<<<< Updated upstream
 The shared `github.apply_labels` Function lives in [`examples/functions`](../../functions/README.md). Build and register it separately before executing the workflow.
+=======
+## Continue an existing pull request
+
+The Function resolves a PR from its same-repository URL in the latest issue
+summary marked `<!-- relayfold:issue-to-pr -->`. Older issues can use an
+unambiguous PR link in their comments or an explicit input:
+`{ "repository": "owner/repo", "issue_number": 7, "pr_number": 12 }`.
+Multiple candidate links, or a `relayfold:pr-created` issue without a link,
+fail with instructions to supply `pr_number`; no replacement PR is created.
+PRs without a summary link must be supplied explicitly.
+
+The optional `pr` object contains `pr_number`, `pr_url`, `title`, `body`, uppercase
+`state`, `branch`, and all pages of conversation `comments`, inline
+`review_comments`, and `reviews`. The separate `change_request` object contains
+`body` and `url` from the latest nonempty developer feedback (PR discussion, inline comment, or submitted review) on the PR.
+Bot comments and marked RelayFold summaries are excluded. A PR without developer
+feedback fails fetching; post the request before starting the run. Feedback is selected by creation time (submission time for reviews); pending reviews are excluded.
+
+Implementation checks out the existing PR branch and focuses on `change_request`,
+preserving existing work and using older discussion as context. Missing information
+or a closed/merged PR that prevents continuation is resolved through `ask_user`.
+Publication pushes to the same PR and returns `pr_created: false` for reuse.
+
+## Summary and readiness
+
+`github-issue-to-pr.update_issue` receives fetched issue, implementation, and
+publication outputs. It posts one issue comment headed **RelayFold — PR created**,
+**RelayFold — PR updated**, or **RelayFold — No PR needed**, with the stable marker,
+change summary, checks, PR link, and request link when available. It rejects
+unresolved `open_questions` and inconsistent identifiers before posting.
+
+The shared `github.apply_labels` Function in
+[`examples/functions`](../../functions/README.md) runs only after summary success.
+It retains/adds `relayfold:pr-created` for a new or reused PR, then removes
+`relayfold:agent-ready`. Successful no-work runs also consume readiness. Failures
+before completion leave readiness present. To request another update, post a new
+PR discussion comment, inline comment, or submitted review, then reapply `relayfold:agent-ready` to the issue and
+start the workflow. Avoid overlapping runs for the same issue; labels are not locks.
+
+## Build and register
+>>>>>>> Stashed changes
 
 Requires Node.js 24 or newer. Build and test from this directory:
 

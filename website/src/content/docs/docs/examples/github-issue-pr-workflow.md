@@ -75,7 +75,7 @@ flowchart TD
     PR -. gh failure .-> Failed
 </pre>
 
-1. `fetch-issue-and-pr` calls `github-issue-to-pr.fetch_issue_and_pr`, a deterministic Function that reads the issue and all comment pages through the [GitHub REST API](https://docs.github.com/en/rest/issues/issues#get-an-issue). It requires `relayfold`, rejects `relayfold:pr-created` and `relayfold:human-input-needed`, and returns `repository`, `issue_number`, `issue_url`, `title`, `state`, `body`, and `comments` (comment bodies). It makes no LLM calls. The implementation and review Agents interpret acceptance criteria from the original body and comments.
+1. `fetch-issue-and-pr` calls `github-issue-to-pr.fetch_issue_and_pr`, a deterministic Function that reads the issue and all comment pages through the [GitHub REST API](https://docs.github.com/en/rest/issues/issues#get-an-issue). It requires `relayfold`, rejects `relayfold:pr-created` and `relayfold:human-input-needed`, and returns `repository`, `issue_number`, `issue_url`, `title`, `state`, `body`, and `comments` (comment bodies). For an existing PR, it selects the latest eligible developer feedback from discussion comments, inline comments, and submitted reviews as `change_request`. It makes no LLM calls. The implementation and review Agents interpret acceptance criteria from the original body and comments, focusing existing-PR updates on `change_request`.
 2. `implement-change` receives the issue details, updates the checkout in the shared `repo` workspace, runs relevant checks, and can pause for clarification when the issue is underspecified.
 3. `review-implementation` checks the implementation against the issue criteria and test results. It can return `continue` with feedback, causing RelayFold to rerun from `implement-change` up to the bounded loop limit.
 4. `create-pull-request` runs after the verifier accepts the implementation, commits and pushes the branch, and creates the PR with `gh pr create`. The PR body includes a full link to the issue it addresses, a change summary, and test results. The Agent checks the published body and adds the issue link if missing, preserving existing content and avoiding duplicate links.
@@ -151,12 +151,19 @@ incomplete pagination fail the task rather than passing partial context.
 See GitHub's [review comments API](https://docs.github.com/en/rest/pulls/comments)
 and [issue comments API](https://docs.github.com/en/rest/issues/comments).
 
+The fetch Function selects the latest nonempty developer feedback from PR
+conversation comments, inline review comments, and submitted reviews as
+`change_request`, including its body and URL. Selection uses creation time for
+comments and submission time for reviews. Bot comments, pending reviews, and
+marked RelayFold summaries are excluded. Fetching fails when no eligible feedback
+is available.
+
 Implementation checks out the supplied PR head branch and continues from its
-existing implementation. It treats requested changes in PR conversation comments,
-inline review comments, and review summaries as implementation instructions alongside
-the issue acceptance criteria, accounting for later clarifications and feedback
-already addressed. Conflicting instructions that require a critical decision trigger
-`ask_user`. Verifier retries preserve the ongoing work on the same PR branch. Review receives the same context, and publication pushes to the existing
+existing implementation. It focuses on `change_request`, using the issue
+acceptance criteria and older discussion as context and preserving work that
+already addresses earlier requests. If the selected feedback has no actionable
+request, implementation asks for clarification through `ask_user`. Conflicting
+instructions that require a critical decision also trigger `ask_user`. Verifier retries preserve the ongoing work on the same PR branch. Review receives the same context, and publication pushes to the existing
 branch without creating a duplicate PR. The final issue comment links to the reused
 PR. `pr_created` remains false for a reused PR, so reuse does not add the
 `relayfold:pr-created` label. Existing issue-label guards still apply: remove a

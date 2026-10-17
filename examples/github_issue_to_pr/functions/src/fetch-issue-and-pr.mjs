@@ -65,6 +65,30 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
           !["open", "closed"].includes(pull.state) ||
           typeof pull.head?.ref !== "string")
         throw new Error("Invalid GitHub pull request response");
+<<<<<<< Updated upstream
+=======
+      const discussion = await allComments(`/issues/${pr_number}/comments`);
+      const reviewComments = await allComments(`/pulls/${pr_number}/comments`);
+      const reviews = await allComments(`/pulls/${pr_number}/reviews`);
+      const feedback = [...discussion, ...reviewComments, ...reviews]
+        .filter((comment) => comment.state !== "PENDING")
+        .sort((a, b) =>
+          Date.parse(a.submitted_at ?? a.created_at ?? "1970-01-01") -
+          Date.parse(b.submitted_at ?? b.created_at ?? "1970-01-01"),
+        );
+      const latest = feedback.findLast(
+        (comment) =>
+          comment.user?.type !== "Bot" &&
+          typeof comment.body === "string" &&
+          comment.body.trim() &&
+          !comment.body.includes("<!-- relayfold:issue-to-pr -->"),
+      );
+      if (!latest)
+        throw new Error(
+          "Existing PR has no developer feedback comment or submitted review; add the requested changes to the PR before rerunning",
+        );
+      change_request = { body: latest.body, url: latest.html_url ?? "" };
+>>>>>>> Stashed changes
       pr = {
         pr_number,
         pr_url: pull.html_url,
@@ -72,9 +96,15 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
         body: pull.body ?? "",
         state: pull.state.toUpperCase(),
         branch: pull.head.ref,
+<<<<<<< Updated upstream
         comments: await commentBodies(`/issues/${pr_number}/comments`),
         review_comments: await commentBodies(`/pulls/${pr_number}/comments`),
         reviews: await commentBodies(`/pulls/${pr_number}/reviews`),
+=======
+        comments: discussion.map((comment) => comment.body ?? ""),
+        review_comments: reviewComments.map((comment) => comment.body ?? ""),
+        reviews: reviews.map((comment) => comment.body ?? ""),
+>>>>>>> Stashed changes
       };
     }
 

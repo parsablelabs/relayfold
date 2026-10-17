@@ -194,3 +194,126 @@ test("fails on missing PRs, invalid responses, and incomplete PR feedback", asyn
     }
   }
 });
+<<<<<<< Updated upstream
+=======
+
+function existingPrFetch({
+  labels = issue.labels,
+  issueComments = [],
+  discussion = [],
+  reviewComments = [],
+  reviews = [],
+  pullResponse = pull,
+} = {}) {
+  return async (url) => {
+    if (url.endsWith("/issues/7")) return reply({ ...issue, labels });
+    if (url.endsWith("/pulls/12")) return reply(pullResponse);
+    if (url.includes("/issues/7/comments")) return reply(issueComments);
+    if (url.includes("/issues/12/comments")) return reply(discussion);
+    if (url.includes("/pulls/12/comments")) return reply(reviewComments);
+    if (url.includes("/pulls/12/reviews")) return reply(reviews);
+    return reply([]);
+  };
+}
+
+test("agent-ready overrides old status labels and resolves PR from latest marked summary", async () => {
+  const run = createIssueAndPrFetcher({
+    fetch: existingPrFetch({
+      labels: [
+        ...issue.labels,
+        { name: "relayfold:pr-created" },
+        { name: "relayfold:human-input-needed" },
+      ],
+      issueComments: [
+        { body: "Old PR https://github.com/example/service/pull/99" },
+        {
+          body: "<!-- relayfold:issue-to-pr --> PR: https://github.com/example/service/pull/12",
+        },
+      ],
+      discussion: [
+        {
+          body: "Earlier request",
+          html_url: "earlier",
+          user: { type: "User" },
+        },
+        { body: "Add validation", html_url: "request", user: { type: "User" } },
+        { body: "Automated response", user: { type: "Bot" } },
+        {
+          body: "<!-- relayfold:issue-to-pr --> status",
+          user: { type: "User" },
+        },
+      ],
+    }),
+  });
+  const result = await run(context);
+  assert.equal(result.pr.pr_number, 12);
+  assert.deepEqual(result.change_request, {
+    body: "Add validation",
+    url: "request",
+  });
+});
+
+test("resolves legacy summary links without requiring the old relayfold label", async () => {
+  const result = await createIssueAndPrFetcher({
+    fetch: existingPrFetch({
+      issueComments: [
+        { body: "Created https://github.com/example/service/pull/12." },
+      ],
+      discussion: [{ body: "Improve the tests" }],
+    }),
+  })(context);
+  assert.equal(result.pr.pr_number, 12);
+});
+
+test("ambiguous or missing marked PR links require explicit pr_number", async () => {
+  for (const body of [
+    "No link",
+    "https://github.com/example/service/pull/12 https://github.com/example/service/pull/13",
+  ]) {
+    await assert.rejects(
+      createIssueAndPrFetcher({
+        fetch: existingPrFetch({
+          labels: [...issue.labels, { name: "relayfold:pr-created" }],
+          issueComments: [{ body }],
+        }),
+      })(context),
+      /specify pr_number/,
+    );
+  }
+});
+
+test("requires a developer conversation comment when continuing a PR", async () => {
+  for (const discussion of [
+    [],
+    [{ body: "Robot", user: { type: "Bot" } }],
+    [{ body: " " }],
+  ]) {
+    await assert.rejects(
+      createIssueAndPrFetcher({ fetch: existingPrFetch({ discussion }) })(
+        prContext,
+      ),
+      /no developer/,
+    );
+  }
+});
+
+
+test("continues a PR from a submitted review without conversation comments", async () => {
+  const review = { body: "Undo README change and move manual testing to PR description", html_url: "https://github.com/example/service/pull/12#pullrequestreview-1", submitted_at: "2026-10-11T12:00:00Z", state: "COMMENTED", user: { type: "User" } };
+  const result = await createIssueAndPrFetcher({ fetch: existingPrFetch({ reviews: [review] }) })(prContext);
+  assert.deepEqual(result.change_request, { body: review.body, url: review.html_url });
+});
+
+test("selects latest human feedback across discussion, inline comments, and submitted reviews", async () => {
+  const result = await createIssueAndPrFetcher({ fetch: existingPrFetch({
+    discussion: [{ body: "Older discussion", created_at: "2026-10-10T12:00:00Z" }],
+    reviews: [
+      { body: "Older review", submitted_at: "2026-10-09T12:00:00Z", state: "CHANGES_REQUESTED" },
+      { body: "Draft review", submitted_at: "2026-10-12T12:00:00Z", state: "PENDING" },
+      { body: "Robot review", submitted_at: "2026-10-12T12:00:00Z", user: { type: "Bot" } },
+    ],
+    reviewComments: [{ body: "Newest human request", html_url: "inline-url", created_at: "2026-10-11T12:00:00Z" }],
+  }) })(prContext);
+  assert.deepEqual(result.change_request, { body: "Newest human request", url: "inline-url" });
+});
+>>>>>>> Stashed changes
