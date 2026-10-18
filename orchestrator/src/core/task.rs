@@ -70,6 +70,8 @@ pub struct Workspace {
 pub struct TaskDef {
     pub id: String,
     pub kind: TaskTypeDef,
+    #[serde(default)]
+    pub allow_agent_feedback: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control: Option<TaskControl>,
     #[serde(default)]
@@ -91,27 +93,41 @@ impl TaskDef {
 
     /// Derive the worker and orchestrator output contract without changing the user schema.
     pub fn effective_output_schema(&self) -> anyhow::Result<Option<JsonSchema>> {
-        const FIELD: &str = "_workflow_exit_reason";
-        if let Some(schema) = &self.output_schema {
-            if schema
-                .get("properties")
-                .and_then(|p| p.get(FIELD))
-                .is_some()
-                || schema
-                    .get("required")
-                    .and_then(|v| v.as_array())
-                    .is_some_and(|fields| fields.iter().any(|v| v == FIELD))
-            {
-                anyhow::bail!(
-                    "task {}: {} is reserved; enable control.allow_early_exit instead of declaring it in output_schema",
-                    self.id,
-                    FIELD
-                );
+        let fields = [
+            (
+                "_workflow_exit_reason",
+                "control.allow_early_exit",
+                self.allows_early_exit(),
+            ),
+            (
+                "_agent_provided_feedback",
+                "allow_agent_feedback",
+                self.allow_agent_feedback,
+            ),
+        ];
+        for (field, flag, _) in fields {
+            if let Some(schema) = &self.output_schema {
+                if schema
+                    .get("properties")
+                    .and_then(|p| p.get(field))
+                    .is_some()
+                    || schema
+                        .get("required")
+                        .and_then(|v| v.as_array())
+                        .is_some_and(|fields| fields.iter().any(|v| v == field))
+                {
+                    anyhow::bail!(
+                        "task {}: {} is reserved; enable {} instead of declaring it in output_schema",
+                        self.id,
+                        field,
+                        flag
+                    );
+                }
             }
         }
-        if !self.allows_early_exit() {
+        let Some((_, enabled_flag, _)) = fields.iter().find(|(_, _, enabled)| *enabled) else {
             return Ok(self.output_schema.clone());
-        }
+        };
         let mut schema = self.output_schema.clone().unwrap_or_else(|| {
             if matches!(self.kind, TaskTypeDef::Agent { .. }) {
                 serde_json::json!({"type":"object", "properties":{"response":{"type":"string"}}})
@@ -125,8 +141,9 @@ impl TaskDef {
                 .any(|key| schema.get(key).is_some())
         {
             anyhow::bail!(
-                "task {}: control.allow_early_exit requires a plain object output_schema or no output_schema",
-                self.id
+                "task {}: {} requires a plain object output_schema or no output_schema",
+                self.id,
+                enabled_flag
             );
         }
         let properties = schema
@@ -141,12 +158,17 @@ impl TaskDef {
                     self.id
                 )
             })?;
-        properties.insert(
-            FIELD.into(),
-            serde_json::json!({
-                "type":["string","null"], "minLength":1, "pattern":"\\S"
-            }),
-        );
+        for (field, _, enabled) in fields {
+            if enabled {
+                let mut field_schema = serde_json::json!({
+                    "type":["string","null"], "minLength":1, "pattern":"\\S"
+                });
+                if field == "_agent_provided_feedback" {
+                    field_schema["maxLength"] = serde_json::json!(255);
+                }
+                properties.insert(field.into(), field_schema);
+            }
+        }
         Ok(Some(schema))
     }
 }
@@ -465,7 +487,35 @@ apiCall:
     }
 
     #[test]
+    fn agent_feedback_is_a_task_level_option_in_yaml_and_worker_payloads() {
+        let yaml = r#"
+id: investigate
+allow_agent_feedback: true
+kind:
+  apiCall:
+    url: https://example.com/items
+    method: GET
+output_schema: null
+required_credentials: []
+"#;
+        let value: serde_json::Value = serde_yaml::from_str(yaml).unwrap();
+        let task: TaskDef = serde_json::from_value(value).unwrap();
+        assert!(task.allow_agent_feedback);
+        assert!(task.control.is_none());
+        let serialized = serde_json::to_value(&task).unwrap();
+        assert_eq!(serialized["allow_agent_feedback"], true);
+        assert!(serialized.get("control").is_none());
+        let without_option = yaml.replace("allow_agent_feedback: true\n", "");
+        let value: serde_json::Value = serde_yaml::from_str(&without_option).unwrap();
+        let task: TaskDef = serde_json::from_value(value).unwrap();
+        assert!(!task.allow_agent_feedback);
+    }
+
+    #[test]
     fn task_control_defaults_to_disabled_and_accepts_opt_in() {
+        assert!(
+            serde_json::from_value::<TaskControl>(json!({"allow_agent_feedback":true})).is_err()
+        );
         assert!(
             serde_json::from_value::<TaskControl>(json!({"allow_early_exit": true}))
                 .unwrap()

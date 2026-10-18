@@ -164,6 +164,7 @@ mod tests {
                     dependencies: vec![],
                     code: "export default async function run() {}".to_string(),
                 }),
+                allow_agent_feedback: false,
                 control: None,
                 timeout_secs: None,
                 input_schemas: vec![],
@@ -188,6 +189,7 @@ mod tests {
                 "task_id": "dispatch-1",
                 "task": {
                     "id": "hello",
+                    "allow_agent_feedback": false,
                     "kind": {
                         "function": {
                             "dependencies": [],

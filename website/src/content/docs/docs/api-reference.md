@@ -556,6 +556,17 @@ Get a specific generation:
 curl -sS "$RELAYFOLD_URL/workflows/hello-workflow-1780000000000000000/tasks/hello/1"
 ```
 
+Enable agent feedback with the task-level `allow_agent_feedback: true`. RelayFold adds
+optional `_agent_provided_feedback` to the effective output schema and instructs
+Agents to report observed environment or setup friction. Do not declare this
+reserved field in the user schema. Feedback is a nonempty string of at most 255
+characters or `null`, and may be omitted. Longer strings fail output validation.
+It remains inside the originating attempt's `output`, including
+when the attempt also requests early exit. Use the generation-specific endpoint
+to inspect an earlier attempt's feedback. Feedback has no independent effect on
+task or workflow status; there is no separate feedback endpoint or aggregation.
+See [Agent feedback](/relayfold/docs/concepts/workflow-yaml/#agent-feedback).
+
 Enable early exit per task with `control.allow_early_exit: true`. RelayFold adds
 the optional `_workflow_exit_reason` output field automatically; do not declare it
 in the user output schema. Without permission, returning the field has no exit effect.

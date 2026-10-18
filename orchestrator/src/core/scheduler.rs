@@ -347,6 +347,7 @@ mod tests {
                     dependencies: vec![],
                     code: "export default async function run() { return {}; }".to_string(),
                 }),
+                allow_agent_feedback: false,
                 control: None,
                 timeout_secs: None,
                 input_schemas: vec![],

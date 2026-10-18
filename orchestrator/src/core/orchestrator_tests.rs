@@ -143,6 +143,7 @@ fn task(id: &str) -> TaskDef {
             dependencies: vec![],
             code: "export default async function run() { return {}; }".to_string(),
         }),
+        allow_agent_feedback: false,
         control: None,
         timeout_secs: None,
         input_schemas: vec![],
@@ -164,6 +165,7 @@ fn function_ref_task(id: &str, reference: &str) -> TaskDef {
         kind: TaskTypeDef::Function(FunctionTaskDef::Ref {
             reference: reference.to_string(),
         }),
+        allow_agent_feedback: false,
         control: None,
         timeout_secs: None,
         input_schemas: vec![],
@@ -319,6 +321,7 @@ async fn execute_workflow_task_isolated_uses_generated_isolated_execution_id() {
     );
 
     let mut enabled_task = task("taska");
+    enabled_task.allow_agent_feedback = true;
     enabled_task.control = Some(crate::core::task::TaskControl {
         allow_early_exit: true,
         verifier: None,
@@ -351,6 +354,10 @@ async fn execute_workflow_task_isolated_uses_generated_isolated_execution_id() {
     assert_eq!(records[0].task_id, "taska");
     assert_eq!(
         records[0].output_schema.as_ref().unwrap()["properties"]["_workflow_exit_reason"]["type"],
+        json!(["string", "null"])
+    );
+    assert_eq!(
+        records[0].output_schema.as_ref().unwrap()["properties"]["_agent_provided_feedback"]["type"],
         json!(["string", "null"])
     );
     assert!(

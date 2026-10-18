@@ -157,6 +157,7 @@ export function buildAgentPromptParts(args: {
     outputSchema: unknown | undefined;
     ask: boolean;
     allowEarlyExit?: boolean;
+    allowAgentFeedback?: boolean;
     sessionReused: boolean;
     approvedTools: PromptTool[];
     approvedSkills: Skill[];
@@ -253,6 +254,19 @@ export function buildAgentPromptParts(args: {
             This skips all pending tasks, including independent tasks.
             Omit the field or return null to continue normal execution.
             Do not use early exit to hide a failure or missing information.`;
+    }
+
+    if (args.allowAgentFeedback === true) {
+        systemContext += `
+            \n\n
+            AGENT FEEDBACK:
+            Report concise, actionable environment or setup friction observed while completing this task.
+            Include any workaround you used and a concrete improvement that would prevent recurrence.
+            Do not perform additional investigation solely to generate feedback.
+            Include feedback in the optional top-level _agent_provided_feedback string in your final JSON.
+            Keep feedback to at most 255 characters.
+            Omit the field or return null when there is nothing useful to report.
+            Feedback does not request early exit or change task success; complete the normal task output.`;
     }
 
     if (args.outputSchema) {
@@ -436,6 +450,7 @@ export class AgentExecutor implements TaskExecutor {
             inputProvided: payload.input_provided,
             outputSchema: payload.task.output_schema,
             allowEarlyExit: payload.task.control?.allow_early_exit === true,
+            allowAgentFeedback: payload.task.allow_agent_feedback === true,
             ask,
             sessionReused,
             approvedTools,

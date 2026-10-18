@@ -117,6 +117,7 @@ mod tests {
                 method: "GET".to_string(),
                 headers: std::collections::HashMap::new(),
             },
+            allow_agent_feedback: false,
             control: None,
             timeout_secs: None,
             input_schemas: vec![],

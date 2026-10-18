@@ -64,6 +64,7 @@ tasks:
 | `output_schema` | No | JSON Schema for task output. Verifier tasks must omit this because RelayFold injects the decision schema. |
 | `workspace` | No | Workspace group assignment. |
 | `required_credentials` | Yes | Named credentials required before execution. Use `[]` when none are needed. |
+| `allow_agent_feedback` | No | Request optional Agent feedback about environment and setup friction. Defaults to `false`. |
 | `control` | No | Early-exit permission (`allow_early_exit`, default `false`) and verifier settings for bounded loops. |
 
 Input and output schemas support standard format validation, including `date`,
@@ -162,6 +163,56 @@ control:
 `control.verifier` turns a task into a bounded-loop verifier. The verifier returns `{ "decision": "complete" }` or `{ "decision": "continue", "feedback": "..." }`.
 
 See [Bounded Loops](/relayfold/docs/concepts/bounded-loops/) for the full control-flow behavior.
+
+## Agent feedback
+
+Enable optional feedback about observed environment and setup friction:
+
+```yaml
+allow_agent_feedback: true
+output_schema:
+  type: object
+  properties:
+    result:
+      type: string
+  required: [result]
+  additionalProperties: false
+```
+
+RelayFold adds the optional reserved `_agent_provided_feedback` field to the
+effective output schema, including strict schemas. Enabled Agents receive
+instructions to report concise observations, any workaround used, and concrete
+improvements. They do not investigate solely to generate feedback.
+
+```json
+{
+  "result": "Implemented the change; tests pass.",
+  "_agent_provided_feedback": "Installed ripgrep to inspect the repository. Include it in the worker image to avoid repeated setup."
+}
+```
+
+Omit the field or return `null` when there is nothing useful to report. Feedback
+strings must be at most 255 characters. Longer strings, empty or whitespace-only
+strings, and other value types fail output validation. Feedback
+has no independent effect on success, retries, satisfaction, or workflow control.
+It can coexist with `_workflow_exit_reason` when early exit is enabled separately.
+
+The flag defaults to `false`. Disabled tasks receive no feedback instructions or
+schema extension. Unsolicited feedback is ordinary output governed by the task's
+schema; RelayFold does not remove it. Do not declare this reserved field in the
+configured schema's top-level `properties` or `required`, even when disabled.
+
+As with early exit, enabled tasks require a plain `type: object` output schema
+without top-level `$ref`, `allOf`, `anyOf`, or `oneOf`, or no output schema. The
+configured schema remains unchanged. Without a user schema, Agents return JSON
+and can put their normal answer in the optional `response` string. The flag is
+accepted for every task kind, but only Agents receive feedback instructions.
+
+Feedback stays in the originating attempt's output and is available through
+[task-result inspection](/relayfold/docs/api-reference/). It requires a valid
+final result, so crashes, timeouts, and exhausted execution may produce none.
+RelayFold collects these observations without automatically changing the
+environment or aggregating feedback across runs.
 
 ## Early workflow exit
 

@@ -198,3 +198,35 @@ test('system instructions are separate from execution data and rebuilt for resto
         assert.doesNotMatch(buildAgentPromptParts({ ...args, ask: false }).systemContext, /MUST call the 'ask_user' tool/);
     }
 });
+
+test('agent feedback instructions follow current permission for fresh and restored sessions', () => {
+    for (const sessionReused of [false, true]) {
+        const args = {
+            prompt: 'Complete the work.',
+            workspacePath: '/tmp/task-workspace',
+            inputs: [],
+            ask: false,
+            sessionReused,
+            approvedTools: [],
+            approvedSkills: [],
+            canLoadSkills: false,
+        };
+        // Neither an absent nor a permissive schema grants permission.
+        for (const outputSchema of [undefined, { type: 'object' }]) {
+            assert.doesNotMatch(buildAgentPromptParts({ ...args, outputSchema }).systemContext,
+                /AGENT FEEDBACK|_agent_provided_feedback/);
+        }
+        const enabled = buildAgentPromptParts({ ...args, allowAgentFeedback: true, allowEarlyExit: true });
+        assert.match(enabled.systemContext, /AGENT FEEDBACK/);
+        assert.match(enabled.systemContext, /environment or setup friction observed/);
+        assert.match(enabled.systemContext, /workaround.*concrete improvement/);
+        assert.match(enabled.systemContext, /Do not perform additional investigation solely/);
+        assert.match(enabled.systemContext, /_agent_provided_feedback string/);
+        assert.match(enabled.systemContext, /at most 255 characters/);
+        assert.match(enabled.systemContext, /Omit the field or return null/);
+        assert.match(enabled.systemContext, /EARLY WORKFLOW EXIT/);
+        assert.doesNotMatch(enabled.finalPrompt, /AGENT FEEDBACK|_agent_provided_feedback/);
+        const disabled = buildAgentPromptParts({ ...args, allowAgentFeedback: false });
+        assert.doesNotMatch(disabled.systemContext, /AGENT FEEDBACK|_agent_provided_feedback/);
+    }
+});
