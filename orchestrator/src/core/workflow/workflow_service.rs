@@ -856,6 +856,7 @@ fn validate_and_normalize_workflow_def(mut def: WorkflowDef) -> anyhow::Result<W
             }
             task.output_schema = Some(verifier_decision_schema());
         }
+        task.effective_output_schema()?;
     }
 
     if has_data_binding_cycle(&def) {
@@ -1005,6 +1006,66 @@ mod tests {
     use crate::core::function::models::FunctionTaskDef;
     use crate::core::task::{TaskSatisfactionStatus, TaskTypeDef};
     use serde_json::json;
+
+    #[test]
+    fn early_exit_configuration_is_validated_without_mutating_user_schema() {
+        for schema in [
+            json!({"type":"string"}),
+            json!({"type":"object", "allOf":[]}),
+            json!({"type":"object", "properties":{"_workflow_exit_reason":{"type":"string"}}}),
+            json!({"type":"object", "required":["_workflow_exit_reason"]}),
+        ] {
+            let mut def = workflow_def_with_task("workflow", "task");
+            def.tasks[0].control = Some(crate::core::task::TaskControl {
+                allow_early_exit: true,
+                verifier: None,
+            });
+            def.tasks[0].output_schema = Some(schema);
+            assert!(validate_and_normalize_workflow_def(def).is_err());
+        }
+        let mut def = workflow_def_with_task("workflow", "task");
+        def.tasks[0].control = Some(crate::core::task::TaskControl {
+            allow_early_exit: true,
+            verifier: None,
+        });
+        let original = def.tasks[0].output_schema.clone();
+        let validated = validate_and_normalize_workflow_def(def).unwrap();
+        assert_eq!(validated.tasks[0].output_schema, original);
+        let effective = validated.tasks[0]
+            .effective_output_schema()
+            .unwrap()
+            .unwrap();
+        let validator = jsonschema::validator_for(&effective).unwrap();
+        assert!(validator.is_valid(&json!({"_workflow_exit_reason":"finished"})));
+        assert!(!validator.is_valid(&json!({"_workflow_exit_reason":"  "})));
+    }
+
+    #[test]
+    fn schema_less_agent_gets_a_json_response_contract_when_exit_is_enabled() {
+        let mut def = workflow_def_with_task("workflow", "task");
+        def.tasks[0].kind = TaskTypeDef::Agent {
+            model_id: "test/model".into(),
+            provider_url: "".into(),
+            prompt: "work".into(),
+            tools: vec![],
+            skills: vec![],
+            ask: false,
+            schema_failure_retry_times: 0.into(),
+            reuse_session: true,
+        };
+        def.tasks[0].output_schema = None;
+        def.tasks[0].control = Some(crate::core::task::TaskControl {
+            allow_early_exit: true,
+            verifier: None,
+        });
+        let def = validate_and_normalize_workflow_def(def).unwrap();
+        let schema = def.tasks[0].effective_output_schema().unwrap().unwrap();
+        assert_eq!(schema["properties"]["response"]["type"], "string");
+        let validator = jsonschema::validator_for(&schema).unwrap();
+        assert!(validator.is_valid(&json!({"response":"done"})));
+        assert!(validator.is_valid(&json!({"_workflow_exit_reason":null})));
+        assert!(!validator.is_valid(&json!("plain text")));
+    }
 
     #[test]
     fn workflow_cursor_rejects_a_different_namespace() {

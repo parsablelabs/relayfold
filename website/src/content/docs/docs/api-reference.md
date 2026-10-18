@@ -556,6 +556,10 @@ Get a specific generation:
 curl -sS "$RELAYFOLD_URL/workflows/hello-workflow-1780000000000000000/tasks/hello/1"
 ```
 
+Enable early exit per task with `control.allow_early_exit: true`. RelayFold adds
+the optional `_workflow_exit_reason` output field automatically; do not declare it
+in the user output schema. Without permission, returning the field has no exit effect.
+
 Task status reports and task-result metadata include `early_exit`. It is `true`
 on the completed attempt that triggered early exit and `false` on other attempts,
 including those skipped as a result. The saved task output contains

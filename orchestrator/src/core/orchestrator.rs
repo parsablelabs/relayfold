@@ -429,12 +429,13 @@ impl Orchestrator {
         task: &TaskDef,
         inputs: &[serde_json::Value],
     ) -> anyhow::Result<crate::ports::task_dispatch::ExecutionResult> {
-        let task = self.resolve_task_function_ref(namespace, task).await?;
+        let mut resolved_task = self.resolve_task_function_ref(namespace, task).await?;
+        resolved_task.output_schema = task.effective_output_schema()?;
         self.task_dispatcher
             .dispatch_task(
                 namespace,
                 &isolated_execution_id,
-                &task,
+                &resolved_task,
                 inputs,
                 &ExecutionMetadata::default(),
                 &TaskDispatchConstraints::default(),

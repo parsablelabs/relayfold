@@ -165,3 +165,36 @@ function payload(overrides) {
         },
     };
 }
+
+test('system instructions are separate from execution data and rebuilt for restored sessions', () => {
+    for (const sessionReused of [false, true]) {
+        const args = {
+            prompt: 'Investigate the task.',
+            workspacePath: '/tmp/task-workspace',
+            inputs: [{ evidence: 'upstream-data' }],
+            inputProvided: 'user-answer',
+            outputSchema: { type: 'object', properties: { result: { type: 'string' } } },
+            ask: true,
+            allowEarlyExit: true,
+            sessionReused,
+            approvedTools: [{ name: 'read', description: 'Read approved files' }],
+            approvedSkills: [],
+            canLoadSkills: true,
+        };
+        const parts = buildAgentPromptParts(args);
+        assert.match(parts.systemContext, /You are an autonomous AI agent/);
+        assert.match(parts.systemContext, /read - Read approved files/);
+        assert.match(parts.systemContext, /MUST call the 'ask_user' tool/);
+        assert.match(parts.systemContext, /EARLY WORKFLOW EXIT/);
+        assert.match(parts.systemContext, /Only request early exit when an explicitly stated condition is met/);
+        assert.match(parts.systemContext, /If no conditions are provided, continue normal execution/);
+        assert.match(parts.systemContext, /FINAL response must be valid JSON/);
+        assert.match(parts.systemContext, /"result"/);
+        assert.doesNotMatch(parts.systemContext, /Investigate the task|task-workspace|upstream-data|user-answer/);
+        assert.doesNotMatch(parts.finalPrompt, /autonomous AI agent|EARLY WORKFLOW EXIT|FINAL response must be valid JSON/);
+        assert.match(parts.finalPrompt, /task-workspace/);
+        assert.match(parts.finalPrompt, /user-answer/);
+        assert.doesNotMatch(buildAgentPromptParts({ ...args, allowEarlyExit: false }).systemContext, /EARLY WORKFLOW EXIT/);
+        assert.doesNotMatch(buildAgentPromptParts({ ...args, ask: false }).systemContext, /MUST call the 'ask_user' tool/);
+    }
+});

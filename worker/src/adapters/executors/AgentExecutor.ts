@@ -3,7 +3,7 @@ import type { TaskExecutionPayload } from '../../core/models/TaskDef.js';
 import type { CredentialsPort } from '../../core/ports/CredentialsPort.js';
 import { getModel } from '@earendil-works/pi-ai';
 import { Agent } from '@earendil-works/pi-agent-core';
-import { AuthStorage, createAgentSession, createCodingTools, formatSkillsForPrompt, SessionManager, type Skill } from '@earendil-works/pi-coding-agent';
+import { AuthStorage, DefaultResourceLoader, getAgentDir, createAgentSession, createCodingTools, formatSkillsForPrompt, SessionManager, type Skill } from '@earendil-works/pi-coding-agent';
 import { logger } from '../../utils/logger.js';
 import { createJsonSchemaValidator } from '../../core/JsonSchemaValidator.js';
 import { createBraveSearchTool } from './agent_tools/braveSearchTool.js';
@@ -156,6 +156,7 @@ export function buildAgentPromptParts(args: {
     inputProvided: string | undefined;
     outputSchema: unknown | undefined;
     ask: boolean;
+    allowEarlyExit?: boolean;
     sessionReused: boolean;
     approvedTools: PromptTool[];
     approvedSkills: Skill[];
@@ -222,29 +223,40 @@ export function buildAgentPromptParts(args: {
         currentEventContext += `\n\nUSER RESPONSE TO PREVIOUS INQUIRY:\n${args.inputProvided}\n`;
     }
 
-    if (!args.sessionReused) {
-        const toolAvailabilityPrompt = args.approvedTools.length > 0
-            ? `You have access to the following approved tools:\n${args.approvedTools.map((approvedTool) => `- ${approvedTool.name} - ${approvedTool.description}`).join('\n')}`
-            : "You do not have access to any tools for this task.";
+    const toolAvailabilityPrompt = args.approvedTools.length > 0
+        ? `You have access to the following approved tools:\n${args.approvedTools.map((approvedTool) => `- ${approvedTool.name} - ${approvedTool.description}`).join('\n')}`
+        : "You do not have access to any tools for this task.";
 
-        const skillsPrompt = args.approvedSkills.length > 0 && args.canLoadSkills
-            ? `\n\n${formatSkillsForPrompt(args.approvedSkills)}`
-            : '';
+    const skillsPrompt = args.approvedSkills.length > 0 && args.canLoadSkills
+        ? `\n\n${formatSkillsForPrompt(args.approvedSkills)}`
+        : '';
 
+    systemContext += `
+            ${args.ask ? "CRITICAL: If you cannot complete the task because you need more information or clarification from the user, you MUST call the 'ask_user' tool. DO NOT return a JSON object with a response that asks a question. Calling 'ask_user' is the ONLY way to request more information." : ""}
+
+            You are an autonomous AI agent.
+            ${toolAvailabilityPrompt}
+            ${skillsPrompt}
+
+            NOTE: You are allowed and encouraged to use approved tools to gather information FIRST before producing the final response.
+            DO NOT ask for permission before using your approved tools. Execute them right away and use the results to answer the user.
+            `;
+    if (args.allowEarlyExit === true) {
         systemContext += `
-                ${args.ask ? "CRITICAL: If you cannot complete the task because you need more information or clarification from the user, you MUST call the 'ask_user' tool. DO NOT return a JSON object with a response that asks a question. Calling 'ask_user' is the ONLY way to request more information." : ""}
-
-                You are an autonomous AI agent.
-                ${toolAvailabilityPrompt}
-                ${skillsPrompt}
-
-                NOTE: You are allowed and encouraged to use approved tools to gather information FIRST before producing the final response. 
-                DO NOT ask for permission before using your approved tools. Execute them right away and use the results to answer the user.
-                `;
+            \n\n
+            EARLY WORKFLOW EXIT:
+            Your task prompt defines when you may terminate the workflow early.
+            Only request early exit when an explicitly stated condition is met.
+            If no conditions are provided, continue normal execution.
+            To request early exit, include a nonempty explanation in the top-level
+            _workflow_exit_reason field of your final JSON.
+            This skips all pending tasks, including independent tasks.
+            Omit the field or return null to continue normal execution.
+            Do not use early exit to hide a failure or missing information.`;
     }
 
     if (args.outputSchema) {
-        currentEventContext += `
+        systemContext += `
             \n\n
             IMPORTANT: Your FINAL response must be valid JSON that adheres to the following schema:
             \n
@@ -265,7 +277,7 @@ export function buildAgentPromptParts(args: {
         currentEventContext,
         finalPrompt: args.sessionReused
             ? currentEventContext
-            : systemContext + args.prompt + freshContext + currentEventContext,
+            : args.prompt + freshContext + currentEventContext,
     };
 }
 
@@ -352,27 +364,6 @@ export class AgentExecutor implements TaskExecutor {
             sessionManager = SessionManager.create(process.cwd(), nativeSessionDir())
         }
 
-        // Consider moving tool registration in here
-        const { session } = await createAgentSession({
-            sessionManager,
-            model,
-            authStorage: AuthStorage.inMemory(),
-        });
-
-        const agent = session.agent;
-
-        // Tool use event handling
-        agent.subscribe((event) => {
-            if (event.type === 'tool_execution_start') {
-                logger.info({ toolName: event.toolName, args: event.args }, '[AgentExecutor] Agent tool started');
-            } else if (event.type === 'tool_execution_end') {
-                logger.info(
-                    { toolName: event.toolName, isError: event.isError },
-                    '[AgentExecutor] Agent tool finished'
-                );
-            }
-        });
-
         // Tool setup
         const toolRegistry = new ToolRegistry();
         toolRegistry.registerTools([
@@ -427,8 +418,6 @@ export class AgentExecutor implements TaskExecutor {
         if (approvedSkills.length > 0 && !canLoadSkills) {
             throw new Error('Agent skills require the read tool so the agent can load SKILL.md content');
         }
-        agent.state.tools = approvedTools.map((approvedTool) => approvedTool.tool);
-        // END - Configure Agent
 
         const loopContext = payload.execution_metadata?.loop_context;
         if (loopContext?.feedback_history?.at(-1)?.feedback || loopContext?.previous_output !== undefined) {
@@ -439,19 +428,52 @@ export class AgentExecutor implements TaskExecutor {
             logger.info('[AgentExecutor] User response provided')
         }
 
-        const { finalPrompt } = buildAgentPromptParts({
+        const { systemContext, finalPrompt } = buildAgentPromptParts({
             prompt,
             workspacePath: payload.workspace_path,
             inputs: payload.inputs,
             loopContext,
             inputProvided: payload.input_provided,
             outputSchema: payload.task.output_schema,
+            allowEarlyExit: payload.task.control?.allow_early_exit === true,
             ask,
             sessionReused,
             approvedTools,
             approvedSkills,
             canLoadSkills,
         });
+
+        // Rebuild the system instructions for every attempt, including restored sessions.
+        const resourceLoader = new DefaultResourceLoader({
+            cwd: sessionManager.getCwd(),
+            agentDir: getAgentDir(),
+            appendSystemPromptOverride: (base) => [...base, systemContext],
+        });
+        await resourceLoader.reload();
+
+        // Consider moving tool registration in here
+        const { session } = await createAgentSession({
+            sessionManager,
+            resourceLoader,
+            model,
+            authStorage: AuthStorage.inMemory(),
+        });
+
+        const agent = session.agent;
+
+        // Tool use event handling
+        agent.subscribe((event) => {
+            if (event.type === 'tool_execution_start') {
+                logger.info({ toolName: event.toolName, args: event.args }, '[AgentExecutor] Agent tool started');
+            } else if (event.type === 'tool_execution_end') {
+                logger.info(
+                    { toolName: event.toolName, isError: event.isError },
+                    '[AgentExecutor] Agent tool finished'
+                );
+            }
+        });
+
+        agent.state.tools = approvedTools.map((approvedTool) => approvedTool.tool);
 
         logger.info(
             {

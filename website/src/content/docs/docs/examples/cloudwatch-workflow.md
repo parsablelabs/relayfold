@@ -63,10 +63,10 @@ New issues receive the `relayfold` label so later runs include them in semantic 
 
 An empty scan, or a scan whose patterns are all covered by open issues, completes
 successfully before any Agent runs. Both `scan-cloudwatch` and
-`prune-covered-logs` return the reserved `_workflow_exit_reason` field; no YAML
-exit toggle is needed.
+`prune-covered-logs` enable `control.allow_early_exit: true` and return the reserved
+`_workflow_exit_reason` field.
 
-Their output schemas require `_workflow_exit_reason` as a string or `null`.
+RelayFold adds the optional reason field to their output schemas automatically.
 Nonempty scans return `null` and continue. A nonempty reason skips remaining
 pending tasks, including analysis, verification, publishing, and labeling. The
 triggering task records `early_exit: true`; its output explains whether the scan

@@ -48,6 +48,11 @@ This avoids a verifier carrying its own prior critique or rejected-output contex
 
 ## Continuations
 
+RelayFold rebuilds the Agent system instructions on every attempt, including
+restored sessions. These include tool and skill guidance, user-input rules, output
+format requirements, and early-exit instructions when enabled. Task prompts and
+execution data are sent as user messages.
+
 For an initial reusable Agent attempt, the worker prompts the Agent with the task prompt and resolved inputs.
 
 For a continuation attempt with an existing session, the worker appends only the current event context. Examples include:

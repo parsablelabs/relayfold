@@ -46,6 +46,8 @@ pub enum TaskTypeDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskControl {
+    #[serde(default)]
+    pub allow_early_exit: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verifier: Option<VerifierControlConfig>,
 }
@@ -78,6 +80,75 @@ pub struct TaskDef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<Workspace>,
     pub required_credentials: Vec<String>,
+}
+
+impl TaskDef {
+    pub fn allows_early_exit(&self) -> bool {
+        self.control
+            .as_ref()
+            .is_some_and(|control| control.allow_early_exit)
+    }
+
+    /// Derive the worker and orchestrator output contract without changing the user schema.
+    pub fn effective_output_schema(&self) -> anyhow::Result<Option<JsonSchema>> {
+        const FIELD: &str = "_workflow_exit_reason";
+        if let Some(schema) = &self.output_schema {
+            if schema
+                .get("properties")
+                .and_then(|p| p.get(FIELD))
+                .is_some()
+                || schema
+                    .get("required")
+                    .and_then(|v| v.as_array())
+                    .is_some_and(|fields| fields.iter().any(|v| v == FIELD))
+            {
+                anyhow::bail!(
+                    "task {}: {} is reserved; enable control.allow_early_exit instead of declaring it in output_schema",
+                    self.id,
+                    FIELD
+                );
+            }
+        }
+        if !self.allows_early_exit() {
+            return Ok(self.output_schema.clone());
+        }
+        let mut schema = self.output_schema.clone().unwrap_or_else(|| {
+            if matches!(self.kind, TaskTypeDef::Agent { .. }) {
+                serde_json::json!({"type":"object", "properties":{"response":{"type":"string"}}})
+            } else {
+                serde_json::json!({"type":"object"})
+            }
+        });
+        if schema.get("type").and_then(|v| v.as_str()) != Some("object")
+            || ["$ref", "allOf", "anyOf", "oneOf"]
+                .iter()
+                .any(|key| schema.get(key).is_some())
+        {
+            anyhow::bail!(
+                "task {}: control.allow_early_exit requires a plain object output_schema or no output_schema",
+                self.id
+            );
+        }
+        let properties = schema
+            .as_object_mut()
+            .unwrap()
+            .entry("properties")
+            .or_insert_with(|| serde_json::json!({}))
+            .as_object_mut()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "task {}: output_schema.properties must be an object",
+                    self.id
+                )
+            })?;
+        properties.insert(
+            FIELD.into(),
+            serde_json::json!({
+                "type":["string","null"], "minLength":1, "pattern":"\\S"
+            }),
+        );
+        Ok(Some(schema))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -394,8 +465,17 @@ apiCall:
     }
 
     #[test]
-    fn task_control_rejects_obsolete_exit_configuration() {
-        assert!(serde_json::from_value::<TaskControl>(json!({"allow_early_exit": true})).is_err());
+    fn task_control_defaults_to_disabled_and_accepts_opt_in() {
+        assert!(
+            serde_json::from_value::<TaskControl>(json!({"allow_early_exit": true}))
+                .unwrap()
+                .allow_early_exit
+        );
+        assert!(
+            !serde_json::from_value::<TaskControl>(json!({}))
+                .unwrap()
+                .allow_early_exit
+        );
         assert!(
             serde_json::from_value::<TaskControl>(json!({"exit_workflow": {"when": "/no_work"}}))
                 .is_err()
