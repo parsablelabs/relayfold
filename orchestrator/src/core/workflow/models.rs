@@ -20,7 +20,7 @@ pub enum WorkflowStatus {
 }
 
 /// A lightweight read model describing the current state of a workflow instance.
-/// Intended for status queries - does not expose raw input/output data.
+/// Intended for status queries - exposes concise feedback, not full input/output data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowStatusReport {
     pub instance_id: String,
@@ -33,6 +33,8 @@ pub struct WorkflowStatusReport {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskStatusReport {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_feedback: Option<String>,
     pub early_exit: bool,
     pub task_attempt_id: String,
     pub task_def_id: String,

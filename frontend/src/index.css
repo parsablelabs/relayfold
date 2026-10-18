@@ -11,6 +11,10 @@
   --font-family-main: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
 }
 
+.feedback-dialog { margin: auto; width: min(560px, calc(100% - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 24px; border: 1px solid var(--color-border); background: var(--color-bg-surface); color: var(--color-text-main); }
+.feedback-dialog::backdrop { background: #0009; }
+.feedback-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 20px 0; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: var(--font-family-main); font-size: 13px; background: var(--color-bg-base); color: var(--color-text-main); line-height: 1.6; }
 button, input, select, textarea { font: inherit; }
@@ -98,6 +102,8 @@ textarea { resize: vertical; width: 100%; }
 .event:last-child { border-bottom: 0; }
 summary { cursor: pointer; }
 .event summary span { margin-right: 16px; }
+.event-success summary { color: #86d9a5; }
+.event-failure summary { color: #ffabab; }
 pre { font-family: inherit; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; padding: 12px; margin-top: 12px; border: 1px solid var(--color-border); background: var(--color-bg-base); max-height: 500px; overflow: auto; }
 .workflow-diagram { overflow: auto; padding: 12px 0; }
 .workflow-diagram svg { display: block; margin: auto; }

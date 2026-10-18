@@ -2387,6 +2387,31 @@ async fn agent_feedback_is_preserved_without_affecting_execution_and_coexists_wi
                 .unwrap()
                 .unwrap();
             let agent = &saved.tasks["a-agent[1]"];
+            let report = engine
+                .get_workflow_status(&namespace, &id)
+                .await
+                .unwrap()
+                .unwrap();
+            let reported_agent = report
+                .tasks
+                .iter()
+                .find(|task| task.task_attempt_id == "a-agent[1]")
+                .unwrap();
+            let expected_feedback = if invalid {
+                None
+            } else {
+                output
+                    .get("_agent_provided_feedback")
+                    .and_then(serde_json::Value::as_str)
+            };
+            assert_eq!(reported_agent.agent_feedback.as_deref(), expected_feedback);
+            let report_json = serde_json::to_value(reported_agent).unwrap();
+            if let Some(feedback) = expected_feedback {
+                assert_eq!(report_json["agent_feedback"], feedback);
+            } else {
+                assert!(report_json.get("agent_feedback").is_none());
+            }
+            assert!(report_json.get("output_data").is_none());
             if invalid {
                 assert_eq!(agent.status, TaskStatus::Failed);
                 assert_eq!(saved.tasks["b-next[1]"].status, TaskStatus::Pending);

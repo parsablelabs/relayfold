@@ -123,6 +123,7 @@ tasks:
         - truncated
         - truncation
   - id: select-group
+    allow_agent_feedback: true
     timeout_secs: 300
     kind:
       agent:
@@ -170,6 +171,7 @@ tasks:
           type: array
           maxItems: 1
   - id: analyze-main
+    allow_agent_feedback: true
     timeout_secs: 1800
     kind:
       agent:
@@ -285,6 +287,7 @@ tasks:
       - gemini_api_key
       - gh_token
   - id: verify-analysis
+    allow_agent_feedback: true
     timeout_secs: 900
     kind:
       agent:

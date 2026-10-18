@@ -228,3 +228,19 @@ test('fetches a complete function definition with an encoded ID and reports miss
   const missing = createApi({ host: 'localhost:3000', apiKey: '' }, async () => new Response('', { status: 404 }))
   await assert.rejects(missing.functionDefinition('missing', controller.signal), /404.*function.*could not be found/)
 })
+
+test('loads attempt feedback with the status report in a single request', async () => {
+  const calls: string[] = []
+  const report = { instance_id: 'run', workflow_def_id: 'workflow', status: 'Completed', tasks: [
+    { task_attempt_id: 'agent[1]', task_def_id: 'agent', generation_index: 1, satisfaction: 'Unsatisfied', status: 'Completed', agent_feedback: 'Install ripgrep.' },
+    { task_attempt_id: 'agent[2]', task_def_id: 'agent', generation_index: 2, satisfaction: 'Satisfied', status: 'Completed' },
+  ] }
+  const api = createApi({ host: 'localhost:3000', apiKey: '' }, async path => {
+    calls.push(String(path))
+    return Response.json(report)
+  })
+  const result = await api.report('run', new AbortController().signal)
+  assert.equal(result.tasks[0].agent_feedback, 'Install ripgrep.')
+  assert.equal(result.tasks[1].agent_feedback, undefined)
+  assert.deepEqual(calls, ['/api/workflows/run'])
+})

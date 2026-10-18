@@ -7,6 +7,7 @@ import type { Definition } from './workflowGraph'
 import { createTriggerValidator, exampleTriggerInput } from './triggerInput'
 import WorkflowDiagram from './WorkflowDiagram'
 import { pendingHumanInputs, shouldPollInstance } from './instanceState'
+import { eventSummary } from './eventSummary'
 import Link from './Link'
 import { navigate, useLocation } from './navigation'
 import { pageUrl, parseRoute } from './routes'
@@ -249,7 +250,10 @@ function InstanceEvents({ api, id }: { api: Api; id: string }) {
   const events = state.data
   return <><Refresh {...state} poll={false} idle="Loaded when this tab opens" /><Feedback error={state.error} loading={!events} />
     {events && <><h2 className="section-title">Event log <span className="muted">Newest first · {events.length} events</span></h2>
-      <div className="glass-panel event-log">{events.length === 0 && <p className="notice">No events recorded yet.</p>}{events.toReversed().map((record, index) => <details key={events.length - index} className="event"><summary><span className="muted">#{events.length - index} · {date(record.created_time)}</span><span>{record.event.type.replaceAll('_', ' ')}</span></summary><pre>{JSON.stringify(record.event, null, 2)}</pre></details>)}</div>
+      <div className="glass-panel event-log">{events.length === 0 && <p className="notice">No events recorded yet.</p>}{events.toReversed().map((record, index) => {
+        const summary = eventSummary(record.event)
+        return <details key={events.length - index} className={`event${summary.tone ? ` event-${summary.tone}` : ''}`}><summary><span className="muted">#{events.length - index} · {date(record.created_time)}</span>{summary.taskName && <span>{summary.taskName}</span>}<span>{summary.label}</span></summary><pre>{JSON.stringify(record.event, null, 2)}</pre></details>
+      })}</div>
     </>}
   </>
 }
@@ -271,6 +275,16 @@ function InstanceDiagram({ api, report }: { api: Api; report: Report }) {
     </section>
   </>
 }
+function AgentFeedbackDialog({ task, close }: { task: Task; close: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  useEffect(() => { dialog.current?.showModal() }, [])
+  return <dialog ref={dialog} className="feedback-dialog" aria-labelledby="agent-feedback-title" onClose={close}>
+    <h2 id="agent-feedback-title">Agent feedback</h2>
+    <p className="muted">{task.task_attempt_id}</p>
+    <p className="feedback-text">{task.agent_feedback}</p>
+    <form method="dialog"><button className="btn btn-secondary" autoFocus>Close</button></form>
+  </dialog>
+}
 function InstanceDetails({ api, id, tab }: { api: Api; id: string; tab: 'status' | 'events' }) {
   function setTab(value: 'status' | 'events') { navigate(pageUrl('instances', id) + (value === 'events' ? '?tab=events' : '')) }
   const load = useCallback((signal: AbortSignal) => api.report(id, signal), [api, id])
@@ -278,6 +292,7 @@ function InstanceDetails({ api, id, tab }: { api: Api; id: string; tab: 'status'
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
+  const [feedbackTask, setFeedbackTask] = useState<Task | null>(null)
   const report = state.data
   async function performAction(operation: () => Promise<unknown>, success: string) {
     setBusy(true); setActionError(''); setActionMessage('')
@@ -310,10 +325,11 @@ function InstanceDetails({ api, id, tab }: { api: Api; id: string; tab: 'status'
       {report.status === 'Paused' && <p className="notice">Running tasks may finish; further task execution waits until you resume.</p>}
       <InstanceDiagram api={api} report={report} />
       {pendingHumanInputs(report).map(task => <section className="glass-panel panel" key={task.task_attempt_id}><HumanInput api={api} report={report} task={task} busy={busy} complete={state.refresh} /></section>)}
-      <h2 className="section-title">Task attempts</h2><div className="glass-panel table-scroll"><table><thead><tr><th>Attempt</th><th>Status</th><th>Generation</th><th>Satisfaction</th><th>Actions</th></tr></thead><tbody>{report.tasks.map(task => <tr key={task.task_attempt_id}><td>{task.task_attempt_id}</td><td><Badge status={taskStatus(task)} /></td><td>{task.generation_index}</td><td>{task.satisfaction}</td><td>{report.status === 'Failed' && task.status === 'Failed' && <button className="btn btn-secondary" disabled={busy} aria-label={`Restart failed task ${task.task_attempt_id}`} onClick={() => void performAction(() => api.retryTask(id, task.task_attempt_id), `Task ${task.task_attempt_id} queued to restart.`)}>Restart task</button>}</td></tr>)}</tbody></table>{report.tasks.length === 0 && <p className="notice">No task attempts yet.</p>}</div>
+      <h2 className="section-title">Task attempts</h2><div className="glass-panel table-scroll"><table><thead><tr><th>Attempt</th><th>Status</th><th>Generation</th><th>Satisfaction</th><th>Actions</th></tr></thead><tbody>{report.tasks.map(task => <tr key={task.task_attempt_id}><td>{task.task_attempt_id}</td><td><Badge status={taskStatus(task)} /></td><td>{task.generation_index}</td><td>{task.satisfaction}</td><td><div className="actions">{task.agent_feedback && <button className="btn btn-secondary" title="View Agent feedback" aria-label={`View Agent feedback for ${task.task_attempt_id}`} onClick={() => setFeedbackTask(task)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M21 15a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z" /><path d="M7 8h10M7 12h7" /></svg></button>}{report.status === 'Failed' && task.status === 'Failed' && <button className="btn btn-secondary" disabled={busy} aria-label={`Restart failed task ${task.task_attempt_id}`} onClick={() => void performAction(() => api.retryTask(id, task.task_attempt_id), `Task ${task.task_attempt_id} queued to restart.`)}>Restart task</button>}</div></td></tr>)}</tbody></table>{report.tasks.length === 0 && <p className="notice">No task attempts yet.</p>}</div>
     </>}
     </div>
     <div id="instance-events-panel" role="tabpanel" aria-labelledby="instance-events-tab" hidden={tab !== 'events'}>{tab === 'events' && <InstanceEvents api={api} id={id} />}</div>
+    {feedbackTask && <AgentFeedbackDialog task={feedbackTask} close={() => setFeedbackTask(null)} />}
   </>
 }
 function Settings({ connection, save }: { connection: Connection; save: (connection: Connection) => void }) {

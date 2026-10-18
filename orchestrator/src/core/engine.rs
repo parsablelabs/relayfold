@@ -74,6 +74,13 @@ impl WorkflowEngine {
             .tasks
             .iter()
             .map(|(task_attempt_id, t)| TaskStatusReport {
+                agent_feedback: t
+                    .output_data
+                    .as_ref()
+                    .and_then(|output| output.get("_agent_provided_feedback"))
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|feedback| !feedback.trim().is_empty())
+                    .map(str::to_owned),
                 early_exit: t.early_exit,
                 task_attempt_id: task_attempt_id.clone(),
                 task_def_id: t.task_def_id.clone(),

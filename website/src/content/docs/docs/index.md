@@ -55,6 +55,9 @@ share the same color.
 Completed diagram nodes and **Success** labels in the instance list, instance
 summary, and task attempts use matching green accents.
 Verifier tasks appear in the diagram and task table alongside other steps.
+Attempts that produced Agent feedback show a speech-bubble action in the task
+table. Select it to read the feedback in a dialog. Feedback arrives with the
+status report, so displaying or opening it needs no additional API requests.
 Diagrams use compact spacing and small monospace labels; wide diagrams scroll
 horizontally within their panel.
 Instance diagram connections animate only while the workflow is **Running**,
@@ -71,6 +74,9 @@ workflow definition pages also load YAML once, with manual Refresh available.
 **Instance Events** fetches event history only when opened; reopen
 the tab or select its **Refresh** button to update events. Event history does
 not refresh automatically.
+Event summaries include the task name for task and verifier events. Failed status
+changes appear in red and successful status changes in green, with status text
+shown alongside the event name. Workflow-wide events have no task name.
 
 Configure the orchestrator's public API host in **Settings**. The host is saved
 in your browser. Controls support standard Tab navigation and Enter activation.

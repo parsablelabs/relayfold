@@ -86,6 +86,12 @@ For issues labeled `relayfold:human-input-needed`, a human must supply the missi
 
 All Agent tasks use the same `workspace.group_name: repo` so files produced or edited by one step are visible to later steps.
 
+All four Agent tasks enable `allow_agent_feedback: true` to report optional
+environment and setup observations in `_agent_provided_feedback`. Inspect this
+field in each task attempt's output; it is separate from verifier retry feedback
+and does not affect workflow control. See
+[Agent feedback](/relayfold/docs/concepts/workflow-yaml/#agent-feedback).
+
 ## Register the workflow
 
 First build, test, and register the fetch Function and shared labeling Function from a local checkout (Node.js 24 or newer; no npm dependencies are required):

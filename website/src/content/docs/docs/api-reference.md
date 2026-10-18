@@ -425,6 +425,12 @@ Response:
 }
 ```
 
+Each task entry includes optional `agent_feedback` when its stored output contains
+nonempty `_agent_provided_feedback`. Absent or null feedback is omitted. This
+concise text is included in the existing status read without loading events or
+making separate task-result requests; full task outputs remain available through
+the task-result endpoints.
+
 ## Workflow events
 
 ```bash
