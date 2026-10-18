@@ -123,3 +123,19 @@ set its task attempt's `early_exit` flag. Skipping, completion, verifier interru
 human-input continuation, and failure rules remain as agreed above. Strict output
 schemas must allow `_workflow_exit_reason` when it may be returned. This addendum
 supersedes the YAML permission and unprefixed field in the preceding addendum.
+
+
+## Addendum: explicit permission and derived output contract (2026-10-18)
+
+Successful early exit now requires `control.allow_early_exit: true`, defaulting to
+false, on any task kind. This supersedes activation by output alone. The flag
+injects Agent instructions and adds optional `_workflow_exit_reason` (a nonblank
+string or null) to a derived output schema used for dispatch and result validation.
+User schemas must not declare or require the reserved field. Enabled schemas must
+be plain objects without top-level references or compositions; schema-less tasks
+receive an object contract, with an optional `response` string for Agents.
+
+Missing or null reasons continue execution. Disabled tasks cannot request exit by
+returning the field. Existing skip, running-task completion, failure, attempt flag,
+and verifier interruption semantics remain unchanged. This is a clean replacement:
+there are no aliases or compatibility paths for the preceding contract.

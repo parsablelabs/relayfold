@@ -97,6 +97,7 @@ tasks:
       - gh_token
 
   - id: implement-change
+    allow_agent_feedback: true
     kind:
       agent:
         model_id: "google/gemini-3.1-pro-preview"
@@ -177,6 +178,7 @@ tasks:
       - gh_token
 
   - id: review-implementation
+    allow_agent_feedback: true
     kind:
       agent:
         model_id: "google/gemini-3.1-pro-preview"
@@ -222,6 +224,7 @@ tasks:
       - gemini_api_key
 
   - id: create-pull-request
+    allow_agent_feedback: true
     kind:
       agent:
         model_id: "google/gemini-3-flash-preview"
@@ -312,6 +315,7 @@ tasks:
       - gh_token
 
   - id: update-github-issue
+    allow_agent_feedback: true
     kind:
       agent:
         model_id: "google/gemini-3-flash-preview"

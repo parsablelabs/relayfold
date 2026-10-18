@@ -165,3 +165,68 @@ function payload(overrides) {
         },
     };
 }
+
+test('system instructions are separate from execution data and rebuilt for restored sessions', () => {
+    for (const sessionReused of [false, true]) {
+        const args = {
+            prompt: 'Investigate the task.',
+            workspacePath: '/tmp/task-workspace',
+            inputs: [{ evidence: 'upstream-data' }],
+            inputProvided: 'user-answer',
+            outputSchema: { type: 'object', properties: { result: { type: 'string' } } },
+            ask: true,
+            allowEarlyExit: true,
+            sessionReused,
+            approvedTools: [{ name: 'read', description: 'Read approved files' }],
+            approvedSkills: [],
+            canLoadSkills: true,
+        };
+        const parts = buildAgentPromptParts(args);
+        assert.match(parts.systemContext, /You are an autonomous AI agent/);
+        assert.match(parts.systemContext, /read - Read approved files/);
+        assert.match(parts.systemContext, /MUST call the 'ask_user' tool/);
+        assert.match(parts.systemContext, /EARLY WORKFLOW EXIT/);
+        assert.match(parts.systemContext, /Only request early exit when an explicitly stated condition is met/);
+        assert.match(parts.systemContext, /If no conditions are provided, continue normal execution/);
+        assert.match(parts.systemContext, /FINAL response must be valid JSON/);
+        assert.match(parts.systemContext, /"result"/);
+        assert.doesNotMatch(parts.systemContext, /Investigate the task|task-workspace|upstream-data|user-answer/);
+        assert.doesNotMatch(parts.finalPrompt, /autonomous AI agent|EARLY WORKFLOW EXIT|FINAL response must be valid JSON/);
+        assert.match(parts.finalPrompt, /task-workspace/);
+        assert.match(parts.finalPrompt, /user-answer/);
+        assert.doesNotMatch(buildAgentPromptParts({ ...args, allowEarlyExit: false }).systemContext, /EARLY WORKFLOW EXIT/);
+        assert.doesNotMatch(buildAgentPromptParts({ ...args, ask: false }).systemContext, /MUST call the 'ask_user' tool/);
+    }
+});
+
+test('agent feedback instructions follow current permission for fresh and restored sessions', () => {
+    for (const sessionReused of [false, true]) {
+        const args = {
+            prompt: 'Complete the work.',
+            workspacePath: '/tmp/task-workspace',
+            inputs: [],
+            ask: false,
+            sessionReused,
+            approvedTools: [],
+            approvedSkills: [],
+            canLoadSkills: false,
+        };
+        // Neither an absent nor a permissive schema grants permission.
+        for (const outputSchema of [undefined, { type: 'object' }]) {
+            assert.doesNotMatch(buildAgentPromptParts({ ...args, outputSchema }).systemContext,
+                /AGENT FEEDBACK|_agent_provided_feedback/);
+        }
+        const enabled = buildAgentPromptParts({ ...args, allowAgentFeedback: true, allowEarlyExit: true });
+        assert.match(enabled.systemContext, /AGENT FEEDBACK/);
+        assert.match(enabled.systemContext, /environment or setup friction observed/);
+        assert.match(enabled.systemContext, /workaround.*concrete improvement/);
+        assert.match(enabled.systemContext, /Do not perform additional investigation solely/);
+        assert.match(enabled.systemContext, /_agent_provided_feedback string/);
+        assert.match(enabled.systemContext, /at most 255 characters/);
+        assert.match(enabled.systemContext, /Omit the field or return null/);
+        assert.match(enabled.systemContext, /EARLY WORKFLOW EXIT/);
+        assert.doesNotMatch(enabled.finalPrompt, /AGENT FEEDBACK|_agent_provided_feedback/);
+        const disabled = buildAgentPromptParts({ ...args, allowAgentFeedback: false });
+        assert.doesNotMatch(disabled.systemContext, /AGENT FEEDBACK|_agent_provided_feedback/);
+    }
+});

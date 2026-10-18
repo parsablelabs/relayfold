@@ -74,6 +74,13 @@ impl WorkflowEngine {
             .tasks
             .iter()
             .map(|(task_attempt_id, t)| TaskStatusReport {
+                agent_feedback: t
+                    .output_data
+                    .as_ref()
+                    .and_then(|output| output.get("_agent_provided_feedback"))
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|feedback| !feedback.trim().is_empty())
+                    .map(str::to_owned),
                 early_exit: t.early_exit,
                 task_attempt_id: task_attempt_id.clone(),
                 task_def_id: t.task_def_id.clone(),
@@ -324,7 +331,8 @@ impl WorkflowEngine {
                     match resolve_task_function_ref(self.storage.as_ref(), namespace, task_def)
                         .await
                     {
-                        Ok(resolved_task_def) => {
+                        Ok(mut resolved_task_def) => {
+                            resolved_task_def.output_schema = task_def.effective_output_schema()?;
                             self.task_dispatcher
                                 .dispatch_task(
                                     namespace,
@@ -407,8 +415,8 @@ impl WorkflowEngine {
                         };
 
                         // Validate against output_schema if one is defined; skip for side-effect-only tasks.
-                        let output_schema = effective_output_schema(task_def);
-                        let schema_ok = match output_schema {
+                        let output_schema = task_def.effective_output_schema()?;
+                        let schema_ok = match output_schema.as_ref() {
                             Some(schema) => match jsonschema::validator_for(schema) {
                                 Ok(validator) => validator.is_valid(&output),
                                 Err(_) => false,
@@ -438,16 +446,18 @@ impl WorkflowEngine {
                                 });
                             }
                             // Preserve exit output even when no output schema is declared.
-                            if output_schema.is_some()
-                                || output.get("_workflow_exit_reason").is_some()
-                            {
+                            if output_schema.is_some() {
                                 events.push(WorkflowInstanceEvent::TaskOutputRecorded {
                                     task_attempt_id: task_attempt_id.clone(),
                                     output_data: Some(output.clone()),
                                 });
                             }
 
-                            match crate::core::task::workflow_exit_reason(&output) {
+                            match if task_def.allows_early_exit() {
+                                crate::core::task::workflow_exit_reason(&output)
+                            } else {
+                                Ok(None)
+                            } {
                                 Ok(Some(reason)) => {
                                     events.push(WorkflowInstanceEvent::TaskEarlyExitSet {
                                         task_attempt_id: task_attempt_id.clone(),
@@ -1522,12 +1532,6 @@ fn initial_task_input_data(
 
 fn task_verifier(task: &crate::core::task::TaskDef) -> Option<&VerifierControlConfig> {
     task.control.as_ref()?.verifier.as_ref()
-}
-
-fn effective_output_schema(
-    task: &crate::core::task::TaskDef,
-) -> Option<&crate::core::task::JsonSchema> {
-    task.output_schema.as_ref()
 }
 
 fn validate_inputs(

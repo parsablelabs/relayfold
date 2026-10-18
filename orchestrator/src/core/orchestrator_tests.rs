@@ -93,6 +93,7 @@ struct RecordedIsolatedExecution {
     namespace: crate::core::namespace::Namespace,
     workflow_inst_id: String,
     task_id: String,
+    output_schema: Option<serde_json::Value>,
 }
 
 struct RecordingIsolatedDispatcher {
@@ -129,6 +130,7 @@ impl TaskDispatchPort for RecordingIsolatedDispatcher {
                 namespace: namespace.clone(),
                 workflow_inst_id: workflow_inst_id.to_string(),
                 task_id: task.id.clone(),
+                output_schema: task.output_schema.clone(),
             });
         Ok(ExecutionResult::Success(json!({})))
     }
@@ -141,6 +143,7 @@ fn task(id: &str) -> TaskDef {
             dependencies: vec![],
             code: "export default async function run() { return {}; }".to_string(),
         }),
+        allow_agent_feedback: false,
         control: None,
         timeout_secs: None,
         input_schemas: vec![],
@@ -162,6 +165,7 @@ fn function_ref_task(id: &str, reference: &str) -> TaskDef {
         kind: TaskTypeDef::Function(FunctionTaskDef::Ref {
             reference: reference.to_string(),
         }),
+        allow_agent_feedback: false,
         control: None,
         timeout_secs: None,
         input_schemas: vec![],
@@ -316,10 +320,16 @@ async fn execute_workflow_task_isolated_uses_generated_isolated_execution_id() {
         Arc::new(MemoryWorkflowQueue::new(10)),
     );
 
+    let mut enabled_task = task("taska");
+    enabled_task.allow_agent_feedback = true;
+    enabled_task.control = Some(crate::core::task::TaskControl {
+        allow_early_exit: true,
+        verifier: None,
+    });
     workflow_service
         .create_workflow_def(
             &crate::core::namespace::test_namespace(),
-            workflow("workflow1", vec![task("taska")]),
+            workflow("workflow1", vec![enabled_task]),
             false,
         )
         .await
@@ -342,6 +352,14 @@ async fn execute_workflow_task_isolated_uses_generated_isolated_execution_id() {
         crate::core::namespace::test_namespace()
     );
     assert_eq!(records[0].task_id, "taska");
+    assert_eq!(
+        records[0].output_schema.as_ref().unwrap()["properties"]["_workflow_exit_reason"]["type"],
+        json!(["string", "null"])
+    );
+    assert_eq!(
+        records[0].output_schema.as_ref().unwrap()["properties"]["_agent_provided_feedback"]["type"],
+        json!(["string", "null"])
+    );
     assert!(
         records[0]
             .workflow_inst_id
@@ -690,6 +708,7 @@ async fn verifier_control_accepts_function_task_and_injects_decision_schema() {
     let mut verifier = task("verify");
     verifier.output_schema = None;
     verifier.control = Some(crate::core::task::TaskControl {
+        allow_early_exit: false,
         verifier: Some(crate::core::verifier::VerifierControlConfig {
             max_iterations: 2,
             on_exhausted_continue: false,
@@ -720,6 +739,7 @@ async fn verifier_control_rejects_user_output_schema() {
     let workflow_service = WorkflowService::new(Arc::new(MemoryStorage::new()));
     let mut verifier = task("verify");
     verifier.control = Some(crate::core::task::TaskControl {
+        allow_early_exit: false,
         verifier: Some(crate::core::verifier::VerifierControlConfig {
             max_iterations: 2,
             on_exhausted_continue: false,
@@ -846,6 +866,7 @@ async fn verifier_control_rejects_invalid_rerun_from_task_id_values() {
     let mut missing_target_verifier = task("verify");
     missing_target_verifier.output_schema = None;
     missing_target_verifier.control = Some(crate::core::task::TaskControl {
+        allow_early_exit: false,
         verifier: Some(crate::core::verifier::VerifierControlConfig {
             max_iterations: 2,
             on_exhausted_continue: false,
@@ -878,6 +899,7 @@ async fn verifier_control_rejects_invalid_rerun_from_task_id_values() {
     let mut downstream_target_verifier = task("taska");
     downstream_target_verifier.output_schema = None;
     downstream_target_verifier.control = Some(crate::core::task::TaskControl {
+        allow_early_exit: false,
         verifier: Some(crate::core::verifier::VerifierControlConfig {
             max_iterations: 2,
             on_exhausted_continue: false,
@@ -910,6 +932,7 @@ async fn verifier_control_rejects_invalid_rerun_from_task_id_values() {
     let mut unrelated_target_verifier = task("verify");
     unrelated_target_verifier.output_schema = None;
     unrelated_target_verifier.control = Some(crate::core::task::TaskControl {
+        allow_early_exit: false,
         verifier: Some(crate::core::verifier::VerifierControlConfig {
             max_iterations: 2,
             on_exhausted_continue: false,
@@ -946,6 +969,7 @@ async fn verifier_control_rejects_overlapping_loop_slices() {
     let mut verifya = task("verifya");
     verifya.output_schema = None;
     verifya.control = Some(crate::core::task::TaskControl {
+        allow_early_exit: false,
         verifier: Some(crate::core::verifier::VerifierControlConfig {
             max_iterations: 2,
             on_exhausted_continue: false,
@@ -955,6 +979,7 @@ async fn verifier_control_rejects_overlapping_loop_slices() {
     let mut verifyb = task("verifyb");
     verifyb.output_schema = None;
     verifyb.control = Some(crate::core::task::TaskControl {
+        allow_early_exit: false,
         verifier: Some(crate::core::verifier::VerifierControlConfig {
             max_iterations: 2,
             on_exhausted_continue: false,

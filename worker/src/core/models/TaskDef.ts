@@ -21,6 +21,7 @@ export interface FunctionDependency {
 export interface TaskDef {
     id: string;
     kind: TaskKind;
+    allow_agent_feedback?: boolean;
     control?: TaskControl;
     timeout_secs?: number;
     input_schemas?: any[];
@@ -29,6 +30,7 @@ export interface TaskDef {
 }
 
 export interface TaskControl {
+    allow_early_exit?: boolean;
     verifier?: VerifierControlConfig;
 }
 

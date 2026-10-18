@@ -1489,6 +1489,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn agent_feedback_output_stays_attached_to_its_attempt() {
+        let namespace = crate::core::namespace::test_namespace();
+        let storage = std::sync::Arc::new(storage().await);
+        let mut initial = instance("feedback", WorkflowStatus::Completed);
+        let mut first = task(TaskStatus::Completed);
+        first.generation_index = 1;
+        first.output_data = Some(
+            json!({"response":"first", "_agent_provided_feedback":"Install ripgrep in the image."}),
+        );
+        let mut second = task(TaskStatus::Completed);
+        second.generation_index = 2;
+        second.output_data = Some(json!({"response":"second", "_agent_provided_feedback":null}));
+        initial.tasks.insert("task-a[1]".into(), first);
+        initial.tasks.insert("task-a[2]".into(), second);
+        let manager =
+            crate::core::workflow::state_manager::WorkflowStateManager::new(storage.clone());
+        manager
+            .commit_events(
+                &namespace,
+                "feedback",
+                vec![WorkflowInstanceEvent::WorkflowCreated { instance: initial }],
+            )
+            .await
+            .unwrap();
+        let saved = storage
+            .get_workflow_instance(&namespace, "feedback")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            saved.tasks["task-a[1]"].output_data.as_ref().unwrap()["_agent_provided_feedback"],
+            "Install ripgrep in the image."
+        );
+        let service = crate::core::workflow::workflow_service::WorkflowService::new(storage);
+        let first = service
+            .get_task_result_for_generation(&namespace, "feedback", "task-a", Some(1))
+            .await
+            .unwrap();
+        let second = service
+            .get_task_result(&namespace, "feedback", "task-a")
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(first).unwrap()["output"]["_agent_provided_feedback"],
+            "Install ripgrep in the image."
+        );
+        let second = serde_json::to_value(second).unwrap();
+        assert_eq!(second["generation_index"], 2);
+        assert_eq!(
+            second["output"],
+            json!({"response":"second", "_agent_provided_feedback":null})
+        );
+    }
+
+    #[tokio::test]
     async fn persists_task_early_exit_from_a_flag_only_event() {
         let namespace = crate::core::namespace::test_namespace();
         let storage = std::sync::Arc::new(storage().await);

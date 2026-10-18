@@ -59,14 +59,20 @@ flowchart TD
 
 Analysis and verification assess whether each finding is immediately implementable. Flagged findings must list specific questions under Notes and distinguish human prerequisites from implementation tasks in Acceptance Criteria. Routine implementation choices and code investigation do not require the label. A human supplies the answers in an issue comment and removes `relayfold:human-input-needed`; the issue-to-PR workflow rejects the issue until that label is removed.
 
+All three Agent tasks (`select-group`, `analyze-main`, and `verify-analysis`) enable
+`allow_agent_feedback: true` to report optional environment and setup observations
+in `_agent_provided_feedback`. Inspect this field in each task attempt's output;
+it is separate from verifier retry feedback and does not affect workflow control.
+See [Agent feedback](/relayfold/docs/concepts/workflow-yaml/#agent-feedback).
+
 New issues receive the `relayfold` label so later runs include them in semantic duplicate inspection. Analysis may also select the optional `bug` label when log and code evidence establish a clear bug, with the defect explained in the issue body and checked by the verifier. General improvements and uncertain hypotheses do not receive `bug`. Dry-run drafts include the labels that would be published. That inspection covers open labeled issues; the publisher also checks fingerprint markers across open and closed issues immediately before creating new ones.
 
 An empty scan, or a scan whose patterns are all covered by open issues, completes
 successfully before any Agent runs. Both `scan-cloudwatch` and
-`prune-covered-logs` return the reserved `_workflow_exit_reason` field; no YAML
-exit toggle is needed.
+`prune-covered-logs` enable `control.allow_early_exit: true` and return the reserved
+`_workflow_exit_reason` field.
 
-Their output schemas require `_workflow_exit_reason` as a string or `null`.
+RelayFold adds the optional reason field to their output schemas automatically.
 Nonempty scans return `null` and continue. A nonempty reason skips remaining
 pending tasks, including analysis, verification, publishing, and labeling. The
 triggering task records `early_exit: true`; its output explains whether the scan

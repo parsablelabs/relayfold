@@ -332,6 +332,7 @@ fn task_def(id: &str, output_schema: serde_json::Value) -> TaskDef {
             method: "GET".to_string(),
             headers: HashMap::new(),
         },
+        allow_agent_feedback: false,
         control: None,
         timeout_secs: None,
         input_schemas: vec![],
@@ -354,6 +355,7 @@ fn agent_task(id: &str, reuse_session: bool) -> TaskDef {
             schema_failure_retry_times: Number::from(0),
             reuse_session,
         },
+        allow_agent_feedback: false,
         control: None,
         timeout_secs: None,
         input_schemas: vec![],
@@ -439,6 +441,7 @@ fn agent_verifier_task(id: &str, rerun_from_task_id: Option<&str>) -> TaskDef {
     };
     task.output_schema = None;
     task.control = Some(TaskControl {
+        allow_early_exit: false,
         verifier: Some(VerifierControlConfig {
             max_iterations: 2,
             on_exhausted_continue: false,
@@ -457,6 +460,7 @@ fn agent_verifier_task_with_policy(
 ) -> TaskDef {
     let mut task = agent_verifier_task(id, rerun_from_task_id);
     task.control = Some(TaskControl {
+        allow_early_exit: false,
         verifier: Some(VerifierControlConfig {
             max_iterations,
             on_exhausted_continue,
@@ -475,6 +479,7 @@ fn function_verifier_task(id: &str, rerun_from_task_id: Option<&str>) -> TaskDef
     });
     task.output_schema = Some(verifier_decision_schema());
     task.control = Some(TaskControl {
+        allow_early_exit: false,
         verifier: Some(VerifierControlConfig {
             max_iterations: 2,
             on_exhausted_continue: false,
@@ -1081,6 +1086,7 @@ async fn test_fan_in_workflow_completes_with_propagation() {
                     method: "POST".to_string(),
                     headers: HashMap::new(),
                 },
+                allow_agent_feedback: false,
                 control: None,
                 timeout_secs: None,
                 input_schemas: vec![
@@ -2069,6 +2075,7 @@ async fn api_call_complete_response_satisfies_schema_and_propagates_downstream()
                         "application/json".to_string(),
                     )]),
                 },
+                allow_agent_feedback: false,
                 control: None,
                 timeout_secs: None,
                 input_schemas: vec![],
@@ -2133,6 +2140,7 @@ async fn api_call_complete_response_that_violates_schema_is_not_propagated() {
                     method: "GET".to_string(),
                     headers: HashMap::new(),
                 },
+                allow_agent_feedback: false,
                 control: None,
                 timeout_secs: None,
                 input_schemas: vec![],
@@ -2304,14 +2312,148 @@ impl TaskDispatchPort for ExitOutputDispatcher {
         _metadata: &ExecutionMetadata,
         _dispatch: &TaskDispatchConstraints,
     ) -> anyhow::Result<ExecutionResult> {
+        if task.allows_early_exit() {
+            assert_eq!(
+                task.output_schema.as_ref().unwrap()["properties"]["_workflow_exit_reason"]["type"],
+                json!(["string", "null"])
+            );
+        }
+        if task.allow_agent_feedback {
+            assert_eq!(
+                task.output_schema.as_ref().unwrap()["properties"]["_agent_provided_feedback"]["type"],
+                json!(["string", "null"])
+            );
+        }
         self.calls.lock().unwrap().push(task.id.clone());
         Ok(ExecutionResult::Success(self.output.clone()))
+    }
+}
+
+#[tokio::test]
+async fn agent_feedback_is_preserved_without_affecting_execution_and_coexists_with_exit() {
+    for early_exit in [false, true] {
+        for feedback in [
+            None,
+            Some(json!(null)),
+            Some(json!("Installed ripgrep; include it in the worker image.")),
+            Some(json!(" ")),
+        ] {
+            let mut output = json!({"response":"done"});
+            if let Some(feedback) = feedback {
+                output["_agent_provided_feedback"] = feedback;
+            }
+            if early_exit {
+                output["_workflow_exit_reason"] = json!("No work remains.");
+            }
+            let invalid = output.get("_agent_provided_feedback") == Some(&json!(" "));
+            let dispatcher = Arc::new(ExitOutputDispatcher {
+                output: output.clone(),
+                calls: StdMutex::new(vec![]),
+            });
+            let engine = make_engine_with_dispatcher(dispatcher.clone());
+            let mut agent = agent_task("a-agent", true);
+            agent.output_schema = None;
+            agent.allow_agent_feedback = true;
+            agent.control = Some(TaskControl {
+                allow_early_exit: early_exit,
+                verifier: None,
+            });
+            let id = setup(
+                &engine,
+                WorkflowDef {
+                    id: "feedback".into(),
+                    description: String::new(),
+                    example_input: None,
+                    tasks: vec![agent, task_def("b-next", json!({"type":"object"}))],
+                    data_bindings: vec![DataBinding {
+                        source_task_id: "a-agent".into(),
+                        target_task_id: "b-next".into(),
+                    }],
+                },
+            )
+            .await;
+            let namespace = crate::core::namespace::test_namespace();
+            assert_eq!(
+                engine
+                    .run_workflow_instance(&namespace, id.clone())
+                    .await
+                    .is_err(),
+                invalid
+            );
+            let saved = engine
+                .storage
+                .get_workflow_instance(&namespace, &id)
+                .await
+                .unwrap()
+                .unwrap();
+            let agent = &saved.tasks["a-agent[1]"];
+            let report = engine
+                .get_workflow_status(&namespace, &id)
+                .await
+                .unwrap()
+                .unwrap();
+            let reported_agent = report
+                .tasks
+                .iter()
+                .find(|task| task.task_attempt_id == "a-agent[1]")
+                .unwrap();
+            let expected_feedback = if invalid {
+                None
+            } else {
+                output
+                    .get("_agent_provided_feedback")
+                    .and_then(serde_json::Value::as_str)
+            };
+            assert_eq!(reported_agent.agent_feedback.as_deref(), expected_feedback);
+            let report_json = serde_json::to_value(reported_agent).unwrap();
+            if let Some(feedback) = expected_feedback {
+                assert_eq!(report_json["agent_feedback"], feedback);
+            } else {
+                assert!(report_json.get("agent_feedback").is_none());
+            }
+            assert!(report_json.get("output_data").is_none());
+            if invalid {
+                assert_eq!(agent.status, TaskStatus::Failed);
+                assert_eq!(saved.tasks["b-next[1]"].status, TaskStatus::Pending);
+                continue;
+            }
+            assert_eq!(saved.status, WorkflowStatus::Completed);
+            assert_eq!(agent.output_data, Some(output.clone()));
+            assert_eq!(agent.early_exit, early_exit);
+            assert_eq!(agent.satisfaction_status, TaskSatisfactionStatus::Satisfied);
+            assert_eq!(
+                saved.tasks["b-next[1]"].status,
+                if early_exit {
+                    TaskStatus::Skipped
+                } else {
+                    TaskStatus::Completed
+                }
+            );
+            let service = crate::core::workflow::workflow_service::WorkflowService::new(
+                engine.storage.clone(),
+            );
+            let result = service
+                .get_task_result_for_generation(&namespace, &id, "a-agent", Some(1))
+                .await
+                .unwrap();
+            let serialized = serde_json::to_value(result).unwrap();
+            assert_eq!(serialized["output"], output);
+            assert_eq!(serialized["generation_index"], 1);
+        }
     }
 }
 
 async fn run_exit_case(
     output: serde_json::Value,
     schema: Option<serde_json::Value>,
+) -> (WorkflowInstance, Vec<String>, bool, Vec<(String, bool)>) {
+    run_exit_case_with_permission(output, schema, true).await
+}
+
+async fn run_exit_case_with_permission(
+    output: serde_json::Value,
+    schema: Option<serde_json::Value>,
+    allow_early_exit: bool,
 ) -> (WorkflowInstance, Vec<String>, bool, Vec<(String, bool)>) {
     let dispatcher = Arc::new(ExitOutputDispatcher {
         output,
@@ -2320,6 +2462,10 @@ async fn run_exit_case(
     let engine = make_engine_with_dispatcher(dispatcher.clone());
     let mut exit = task_def("a-exit", json!({"type": "object"}));
     exit.output_schema = schema;
+    exit.control = Some(TaskControl {
+        allow_early_exit,
+        verifier: None,
+    });
     let id = setup(
         &engine,
         WorkflowDef {
@@ -2438,7 +2584,7 @@ async fn invalid_exit_reason_fails_without_skipping_pending_tasks() {
 async fn invalid_output_schema_cannot_request_early_exit() {
     let (instance, calls, failed, exit_events) = run_exit_case(
         json!({"_workflow_exit_reason":"already processed"}),
-        Some(json!({"type":"string"})),
+        Some(json!({"type":"object", "required":["result"], "properties":{"result":{"type":"string"}}, "additionalProperties":false})),
     )
     .await;
     assert_eq!(calls, vec!["a-exit"]);
@@ -2458,7 +2604,11 @@ async fn early_exit_retains_prior_outputs_and_running_attempts_and_waits_for_the
         calls: StdMutex::new(vec![]),
     });
     let engine = make_engine_with_dispatcher(dispatcher.clone());
-    let exit = task_def("exit", json!({"type":"object"}));
+    let mut exit = task_def("exit", json!({"type":"object"}));
+    exit.control = Some(TaskControl {
+        allow_early_exit: true,
+        verifier: None,
+    });
     let def = WorkflowDef {
         example_input: None,
         id: "running-exit".into(),
@@ -2569,8 +2719,8 @@ async fn early_exit_retains_prior_outputs_and_running_attempts_and_waits_for_the
     assert_eq!(finished.status, WorkflowStatus::Completed);
     assert_eq!(finished.tasks["pending[1]"].status, TaskStatus::Skipped);
     assert_eq!(finished.tasks["running[2]"].status, TaskStatus::Completed);
-    // The continuation also returns the reserved reason and triggers exit.
-    assert!(finished.tasks["running[2]"].early_exit);
+    // The continuation has no exit permission, even though it returns the field.
+    assert!(!finished.tasks["running[2]"].early_exit);
     assert_eq!(*dispatcher.calls.lock().unwrap(), vec!["exit", "running"]);
 }
 
@@ -2582,7 +2732,11 @@ async fn skipped_verifier_slices_complete_without_acceptance_or_new_generations(
             calls: StdMutex::new(vec![]),
         });
         let engine = make_engine_with_dispatcher(dispatcher.clone());
-        let exit = task_def("a-exit", json!({"type":"object"}));
+        let mut exit = task_def("a-exit", json!({"type":"object"}));
+        exit.control = Some(TaskControl {
+            allow_early_exit: true,
+            verifier: None,
+        });
         let mut bindings = vec![DataBinding {
             source_task_id: "b-work".into(),
             target_task_id: "c-verify".into(),
@@ -2633,7 +2787,8 @@ async fn verifier_can_trigger_exit_without_retrying_or_exhaustion_failure() {
         calls: StdMutex::new(vec![]),
     });
     let engine = make_engine_with_dispatcher(dispatcher.clone());
-    let verifier = agent_verifier_task_with_policy("verify", None, 1, false);
+    let mut verifier = agent_verifier_task_with_policy("verify", None, 1, false);
+    verifier.control.as_mut().unwrap().allow_early_exit = true;
     let id = setup(
         &engine,
         WorkflowDef {
@@ -2742,4 +2897,33 @@ async fn independent_verifier_continues_with_skipped_consumer_after_exit() {
             VerifierStateStatus::Accepted
         );
     }
+}
+
+#[tokio::test]
+async fn disabled_early_exit_does_not_interpret_returned_reason() {
+    for output in [
+        json!({"_workflow_exit_reason":"stop"}),
+        json!({"_workflow_exit_reason":false}),
+    ] {
+        for schema in [None, Some(json!({"type":"object"}))] {
+            let (instance, calls, failed, events) =
+                run_exit_case_with_permission(output.clone(), schema, false).await;
+            assert!(!failed);
+            assert_eq!(instance.status, WorkflowStatus::Completed);
+            assert_eq!(calls.len(), 3);
+            assert!(events.is_empty());
+            assert!(!instance.tasks["a-exit[1]"].early_exit);
+        }
+    }
+}
+
+#[tokio::test]
+async fn early_exit_augments_strict_output_schema() {
+    let output = json!({"result":"done", "_workflow_exit_reason":"no more work"});
+    let schema = json!({"type":"object", "properties":{"result":{"type":"string"}}, "required":["result"], "additionalProperties":false});
+    let (instance, calls, failed, events) = run_exit_case(output.clone(), Some(schema)).await;
+    assert!(!failed);
+    assert_eq!(calls, vec!["a-exit"]);
+    assert_eq!(events, vec![("a-exit[1]".into(), true)]);
+    assert_eq!(instance.tasks["a-exit[1]"].output_data, Some(output));
 }

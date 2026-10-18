@@ -86,7 +86,7 @@ worker process a unique value.
 
 ### Container workers with a local orchestrator
 
-For Linux development from the source checkout, run the orchestrator on the
+For Linux or macOS development from the source checkout, run the orchestrator on the
 host and two container workers with:
 
 ```bash
@@ -98,6 +98,7 @@ only the Compose workers, and runs the orchestrator in the foreground. Ctrl-C
 stops the workers. Pass `--skip-build` to reuse the existing orchestrator binary;
 worker images are still built. Storage and logging settings use the same
 environment variables as `scripts/run-orchestrator-dev.sh`.
+On macOS, the script points workers at `http://host.docker.internal:3001`.
 
 To manage the processes separately, run `scripts/run-orchestrator-dev.sh` in one
 terminal and start workers in another:
@@ -106,14 +107,25 @@ terminal and start workers in another:
 docker compose -f docker-compose.yml -f docker-compose.local-workers.yml up -d --build --no-deps worker
 ```
 
+On macOS with Docker Desktop, set the host gateway URL when starting workers:
+
+```bash
+RELAYFOLD_ORCHESTRATOR_HTTP_URL=http://host.docker.internal:3001 \
+  docker compose -f docker-compose.yml -f docker-compose.local-workers.yml up -d --build --no-deps worker
+```
+
 The override uses host networking so workers can reach the orchestrator at
-`http://127.0.0.1:3001`. `--no-deps` skips starting the Compose orchestrator.
+`http://127.0.0.1:3001` on Linux. The worker URL can be overridden with
+`RELAYFOLD_ORCHESTRATOR_HTTP_URL`. `--no-deps` skips starting the Compose orchestrator.
 Keep the local orchestrator's worker API on the default `127.0.0.1:3001` address
 when using this override. Stop any Compose orchestrator already using port 3000
 before starting the local process. The root Compose file continues to use
 `http://orchestrator:3001` for the full container stack.
 The base Compose configuration starts two workers. When switching an existing
 worker deployment to this override, Compose recreates the worker containers.
+If launching an instance returns `503` with no eligible worker, check
+`docker compose logs --tail 50 worker`. Repeated connection refusals at
+`127.0.0.1:3001` on macOS indicate that workers need the host gateway URL above.
 
 ### Host identity and shared state
 

@@ -627,6 +627,7 @@ mod tests {
                             schema_failure_retry_times: 0.into(),
                             reuse_session: true,
                         },
+                        allow_agent_feedback: false,
                         control: None,
                         timeout_secs: None,
                         input_schemas: vec![],

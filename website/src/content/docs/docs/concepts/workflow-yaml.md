@@ -64,7 +64,8 @@ tasks:
 | `output_schema` | No | JSON Schema for task output. Verifier tasks must omit this because RelayFold injects the decision schema. |
 | `workspace` | No | Workspace group assignment. |
 | `required_credentials` | Yes | Named credentials required before execution. Use `[]` when none are needed. |
-| `control` | No | Verifier settings for bounded loops. |
+| `allow_agent_feedback` | No | Request optional Agent feedback about environment and setup friction. Defaults to `false`. |
+| `control` | No | Early-exit permission (`allow_early_exit`, default `false`) and verifier settings for bounded loops. |
 
 Input and output schemas support standard format validation, including `date`,
 `email`, and `uri`.
@@ -163,13 +164,83 @@ control:
 
 See [Bounded Loops](/relayfold/docs/concepts/bounded-loops/) for the full control-flow behavior.
 
+## Agent feedback
+
+Enable optional feedback about observed environment and setup friction:
+
+```yaml
+allow_agent_feedback: true
+output_schema:
+  type: object
+  properties:
+    result:
+      type: string
+  required: [result]
+  additionalProperties: false
+```
+
+RelayFold adds the optional reserved `_agent_provided_feedback` field to the
+effective output schema, including strict schemas. Enabled Agents receive
+instructions to report concise observations, any workaround used, and concrete
+improvements. They do not investigate solely to generate feedback.
+
+```json
+{
+  "result": "Implemented the change; tests pass.",
+  "_agent_provided_feedback": "Installed ripgrep to inspect the repository. Include it in the worker image to avoid repeated setup."
+}
+```
+
+Omit the field or return `null` when there is nothing useful to report. Feedback
+strings must be at most 255 characters. Longer strings, empty or whitespace-only
+strings, and other value types fail output validation. Feedback
+has no independent effect on success, retries, satisfaction, or workflow control.
+It can coexist with `_workflow_exit_reason` when early exit is enabled separately.
+
+The flag defaults to `false`. Disabled tasks receive no feedback instructions or
+schema extension. Unsolicited feedback is ordinary output governed by the task's
+schema; RelayFold does not remove it. Do not declare this reserved field in the
+configured schema's top-level `properties` or `required`, even when disabled.
+
+As with early exit, enabled tasks require a plain `type: object` output schema
+without top-level `$ref`, `allOf`, `anyOf`, or `oneOf`, or no output schema. The
+configured schema remains unchanged. Without a user schema, Agents return JSON
+and can put their normal answer in the optional `response` string. The flag is
+accepted for every task kind, but only Agents receive feedback instructions.
+
+Feedback stays in the originating attempt's output and is available through
+[task-result inspection](/relayfold/docs/api-reference/). It requires a valid
+final result, so crashes, timeouts, and exhausted execution may produce none.
+RelayFold collects these observations without automatically changing the
+environment or aggregating feedback across runs.
+
 ## Early workflow exit
 
-RelayFold reserves the exact top-level output field `_workflow_exit_reason` for
-successful early completion. No YAML toggle is required; other underscore-prefixed
-fields are ordinary task data.
+Enable successful early completion on a task with `control.allow_early_exit`:
 
-The task requests exit by returning a top-level `_workflow_exit_reason` string:
+```yaml
+control:
+  allow_early_exit: true
+output_schema:
+  type: object
+  properties:
+    result:
+      type: string
+  additionalProperties: false
+```
+
+The flag defaults to `false` and applies to every task kind. RelayFold adds the
+optional top-level `_workflow_exit_reason` field to the effective output schema,
+including strict schemas, and tells enabled Agents how to use it. Do not declare
+this reserved field in `output_schema.properties` or `required`; configuration
+validation rejects those declarations.
+
+For Agent tasks, define the conditions for early exit explicitly in the task
+prompt. The flag grants permission and supplies the output protocol; it does not
+define when to exit. Agents are instructed to continue normal execution if the
+task prompt provides no early-exit conditions.
+
+The task requests exit by returning:
 
 ```json
 {
@@ -177,11 +248,18 @@ The task requests exit by returning a top-level `_workflow_exit_reason` string:
 }
 ```
 
-A missing or `null` reason continues normal execution. An empty or whitespace-only
-string, or another value type, fails the task and workflow. The unprefixed
-`workflow_exit_reason` is ordinary data and has no control effect.
-Output schema validation runs before the control is evaluated; if your schema
-restricts output fields, include `_workflow_exit_reason` as a string or `null`.
+A missing or `null` reason continues execution. An empty or whitespace-only string,
+or another value type, fails output validation. A disabled task's returned field
+has no exit effect; its ordinary output schema still applies. The unprefixed
+`workflow_exit_reason` is ordinary data.
+
+Enabled tasks require a plain `type: object` output schema, without top-level
+`$ref`, `allOf`, `anyOf`, or `oneOf`, or no output schema. Without a user schema,
+RelayFold supplies an object schema and retains the result. Agents must then
+return JSON; they can put their normal answer in the optional `response` string.
+The configured schema remains unchanged; dispatch and result validation use the
+same derived schema. Normal required output fields must still be present when
+requesting exit.
 
 An exit request preserves the triggering task's output and marks remaining
 pending tasks as `Skipped`. Skipped tasks are not dispatched. Already-running tasks
@@ -191,7 +269,8 @@ becomes `Failed` under normal failure behavior.
 
 The control is independent of task kind. For an external API response that does
 not follow this output contract, use a downstream Function to interpret the
-response and return `_workflow_exit_reason` at the top level.
+response and return `_workflow_exit_reason` at the top level with
+`control.allow_early_exit: true` on that Function.
 There are no JSON Pointer conditions or static YAML reasons.
 
 The triggering attempt records `early_exit: true`, exposed in task status reports

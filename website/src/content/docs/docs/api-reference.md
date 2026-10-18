@@ -425,6 +425,12 @@ Response:
 }
 ```
 
+Each task entry includes optional `agent_feedback` when its stored output contains
+nonempty `_agent_provided_feedback`. Absent or null feedback is omitted. This
+concise text is included in the existing status read without loading events or
+making separate task-result requests; full task outputs remain available through
+the task-result endpoints.
+
 ## Workflow events
 
 ```bash
@@ -555,6 +561,21 @@ Get a specific generation:
 ```bash
 curl -sS "$RELAYFOLD_URL/workflows/hello-workflow-1780000000000000000/tasks/hello/1"
 ```
+
+Enable agent feedback with the task-level `allow_agent_feedback: true`. RelayFold adds
+optional `_agent_provided_feedback` to the effective output schema and instructs
+Agents to report observed environment or setup friction. Do not declare this
+reserved field in the user schema. Feedback is a nonempty string of at most 255
+characters or `null`, and may be omitted. Longer strings fail output validation.
+It remains inside the originating attempt's `output`, including
+when the attempt also requests early exit. Use the generation-specific endpoint
+to inspect an earlier attempt's feedback. Feedback has no independent effect on
+task or workflow status; there is no separate feedback endpoint or aggregation.
+See [Agent feedback](/relayfold/docs/concepts/workflow-yaml/#agent-feedback).
+
+Enable early exit per task with `control.allow_early_exit: true`. RelayFold adds
+the optional `_workflow_exit_reason` output field automatically; do not declare it
+in the user output schema. Without permission, returning the field has no exit effect.
 
 Task status reports and task-result metadata include `early_exit`. It is `true`
 on the completed attempt that triggered early exit and `false` on other attempts,

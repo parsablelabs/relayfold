@@ -856,6 +856,7 @@ fn validate_and_normalize_workflow_def(mut def: WorkflowDef) -> anyhow::Result<W
             }
             task.output_schema = Some(verifier_decision_schema());
         }
+        task.effective_output_schema()?;
     }
 
     if has_data_binding_cycle(&def) {
@@ -1007,6 +1008,184 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn early_exit_configuration_is_validated_without_mutating_user_schema() {
+        for schema in [
+            json!({"type":"string"}),
+            json!({"type":"object", "allOf":[]}),
+            json!({"type":"object", "properties":{"_workflow_exit_reason":{"type":"string"}}}),
+            json!({"type":"object", "required":["_workflow_exit_reason"]}),
+        ] {
+            let mut def = workflow_def_with_task("workflow", "task");
+            def.tasks[0].control = Some(crate::core::task::TaskControl {
+                allow_early_exit: true,
+                verifier: None,
+            });
+            def.tasks[0].output_schema = Some(schema);
+            assert!(validate_and_normalize_workflow_def(def).is_err());
+        }
+        let mut def = workflow_def_with_task("workflow", "task");
+        def.tasks[0].control = Some(crate::core::task::TaskControl {
+            allow_early_exit: true,
+            verifier: None,
+        });
+        let original = def.tasks[0].output_schema.clone();
+        let validated = validate_and_normalize_workflow_def(def).unwrap();
+        assert_eq!(validated.tasks[0].output_schema, original);
+        let effective = validated.tasks[0]
+            .effective_output_schema()
+            .unwrap()
+            .unwrap();
+        let validator = jsonschema::validator_for(&effective).unwrap();
+        assert!(validator.is_valid(&json!({"_workflow_exit_reason":"finished"})));
+        assert!(!validator.is_valid(&json!({"_workflow_exit_reason":"  "})));
+    }
+
+    #[test]
+    fn schema_less_agent_gets_a_json_response_contract_when_controls_are_enabled() {
+        let mut def = workflow_def_with_task("workflow", "task");
+        def.tasks[0].kind = TaskTypeDef::Agent {
+            model_id: "test/model".into(),
+            provider_url: "".into(),
+            prompt: "work".into(),
+            tools: vec![],
+            skills: vec![],
+            ask: false,
+            schema_failure_retry_times: 0.into(),
+            reuse_session: true,
+        };
+        def.tasks[0].output_schema = None;
+        def.tasks[0].allow_agent_feedback = true;
+        def.tasks[0].control = Some(crate::core::task::TaskControl {
+            allow_early_exit: true,
+            verifier: None,
+        });
+        let def = validate_and_normalize_workflow_def(def).unwrap();
+        let schema = def.tasks[0].effective_output_schema().unwrap().unwrap();
+        assert_eq!(schema["properties"]["response"]["type"], "string");
+        let validator = jsonschema::validator_for(&schema).unwrap();
+        assert!(validator.is_valid(&json!({"response":"done"})));
+        assert!(validator.is_valid(&json!({"_workflow_exit_reason":null})));
+        assert!(
+            validator.is_valid(
+                &json!({"response":"done", "_agent_provided_feedback":"Install ripgrep."})
+            )
+        );
+        assert!(!validator.is_valid(&json!("plain text")));
+    }
+
+    #[test]
+    fn agent_feedback_configuration_and_output_contract() {
+        for schema in [
+            None,
+            Some(json!({"type":"object"})),
+            Some(json!({"type":"object", "additionalProperties":false})),
+        ] {
+            let mut def = workflow_def_with_task("workflow", "task");
+            def.tasks[0].output_schema = schema.clone();
+            let def = validate_and_normalize_workflow_def(def).unwrap();
+            assert_eq!(def.tasks[0].effective_output_schema().unwrap(), schema);
+        }
+
+        for enabled in [false, true] {
+            for schema in [
+                json!({"type":"object", "properties":{"_agent_provided_feedback":{"type":"string"}}}),
+                json!({"type":"object", "required":["_agent_provided_feedback"]}),
+            ] {
+                let mut def = workflow_def_with_task("workflow", "task");
+                def.tasks[0].allow_agent_feedback = enabled;
+                def.tasks[0].control = Some(crate::core::task::TaskControl {
+                    allow_early_exit: false,
+                    verifier: None,
+                });
+                def.tasks[0].output_schema = Some(schema);
+                assert!(validate_and_normalize_workflow_def(def).is_err());
+            }
+        }
+        for schema in [
+            json!({"type":"string"}),
+            json!(true),
+            json!({"type":"object", "$ref":"#/$defs/result"}),
+            json!({"type":"object", "allOf":[]}),
+            json!({"type":"object", "anyOf":[]}),
+            json!({"type":"object", "oneOf":[]}),
+            json!({"type":"object", "properties":[]}),
+        ] {
+            let mut def = workflow_def_with_task("workflow", "task");
+            def.tasks[0].allow_agent_feedback = true;
+            def.tasks[0].control = Some(crate::core::task::TaskControl {
+                allow_early_exit: false,
+                verifier: None,
+            });
+            def.tasks[0].output_schema = Some(schema);
+            assert!(validate_and_normalize_workflow_def(def).is_err());
+        }
+        for early_exit in [false, true] {
+            let mut def = workflow_def_with_task("workflow", "task");
+            let original = json!({"type":"object", "properties":{"result":{"type":"string"}},
+                "required":["result"], "additionalProperties":false});
+            def.tasks[0].output_schema = Some(original.clone());
+            def.tasks[0].allow_agent_feedback = true;
+            def.tasks[0].control = Some(crate::core::task::TaskControl {
+                allow_early_exit: early_exit,
+                verifier: None,
+            });
+            let def = validate_and_normalize_workflow_def(def).unwrap();
+            assert_eq!(def.tasks[0].output_schema, Some(original));
+            let schema = def.tasks[0].effective_output_schema().unwrap().unwrap();
+            let validator = jsonschema::validator_for(&schema).unwrap();
+            for output in [
+                json!({"result":"done"}),
+                json!({"result":"done", "_agent_provided_feedback":null}),
+                json!({"result":"done", "_agent_provided_feedback":"Install ripgrep in the image."}),
+            ] {
+                assert!(validator.is_valid(&output));
+            }
+            for character in ["a", "😀"] {
+                assert!(validator.is_valid(&json!({
+                    "result":"done", "_agent_provided_feedback":character.repeat(255)
+                })));
+                assert!(!validator.is_valid(&json!({
+                    "result":"done", "_agent_provided_feedback":character.repeat(256)
+                })));
+            }
+            assert_eq!(
+                validator.is_valid(
+                    &json!({"result":"done", "_agent_provided_feedback":"Install ripgrep.",
+                "_workflow_exit_reason":"No work remains."})
+                ),
+                early_exit
+            );
+            for feedback in [
+                json!(""),
+                json!(" \n\t"),
+                json!(3),
+                json!(false),
+                json!([]),
+                json!({}),
+            ] {
+                assert!(
+                    !validator
+                        .is_valid(&json!({"result":"done", "_agent_provided_feedback":feedback}))
+                );
+            }
+            assert!(!validator.is_valid(&json!({"_agent_provided_feedback":"Install ripgrep."})));
+        }
+        let mut def = workflow_def_with_task("workflow", "task");
+        def.tasks[0].output_schema = None;
+        def.tasks[0].allow_agent_feedback = true;
+        def.tasks[0].control = Some(crate::core::task::TaskControl {
+            allow_early_exit: false,
+            verifier: None,
+        });
+        assert!(
+            validate_and_normalize_workflow_def(def).unwrap().tasks[0]
+                .effective_output_schema()
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
     fn workflow_cursor_rejects_a_different_namespace() {
         let namespace = crate::core::namespace::test_namespace();
         let other_namespace = Namespace::new("123e4567-e89b-12d3-a456-426614174000").unwrap();
@@ -1078,6 +1257,7 @@ mod tests {
                     dependencies: vec![],
                     code: "export default async function run() { return {}; }".to_string(),
                 }),
+                allow_agent_feedback: false,
                 control: None,
                 timeout_secs: None,
                 input_schemas: vec![],
@@ -1102,6 +1282,7 @@ mod tests {
                 schema_failure_retry_times: 0.into(),
                 reuse_session: true,
             },
+            allow_agent_feedback: false,
             control: None,
             timeout_secs: None,
             input_schemas: vec![],

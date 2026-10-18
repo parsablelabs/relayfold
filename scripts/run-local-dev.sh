@@ -18,6 +18,10 @@ if [[ $# -gt 1 ]]; then
   exit 2
 fi
 
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  export RELAYFOLD_ORCHESTRATOR_HTTP_URL="${RELAYFOLD_ORCHESTRATOR_HTTP_URL:-http://host.docker.internal:3001}"
+fi
+
 compose=(docker compose -f "$repo_root/docker-compose.yml" -f "$repo_root/docker-compose.local-workers.yml")
 cleanup() {
   "${compose[@]}" stop worker
