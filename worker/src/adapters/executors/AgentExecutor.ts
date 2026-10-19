@@ -322,8 +322,6 @@ export class AgentExecutor implements TaskExecutor {
         const providerUrl = agentDef.provider_url as string;
         const prompt = agentDef.prompt as string;
 
-        logger.info(`[AgentExecutor] Running agent model: ${modelIdFull} with provider: ${providerUrl}`);
-
         // START - Configure Agent
         const parts = modelIdFull.split('/');
         const providerName = parts[0];
@@ -332,7 +330,24 @@ export class AgentExecutor implements TaskExecutor {
             throw new Error(`Invalid model_id format: '${modelIdFull}'. Expected a non-empty provider name.`);
         }
 
+<<<<<<< Updated upstream
         let model = getModel(providerName as any, modelName as any);
+||||||| Stash base
+        const modelRuntime = await createModelRuntime(this.modelCredentials);
+        let model = modelRuntime.getModel(providerName, modelName);
+=======
+        logger.info(
+            {
+                modelId: modelIdFull,
+                provider: providerName,
+                authMethod: providerName === 'openai-codex' ? 'oauth' : 'api_key',
+            },
+            '[AgentExecutor] Running agent model',
+        );
+
+        const modelRuntime = await createModelRuntime(this.modelCredentials);
+        let model = modelRuntime.getModel(providerName, modelName);
+>>>>>>> Stashed changes
         if (!model) {
             throw new Error(`Model not found for ${providerName}/${modelName}`);
         }

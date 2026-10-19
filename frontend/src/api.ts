@@ -76,6 +76,7 @@ export function createApi(connection: Connection, transport: typeof fetch = fetc
       return pending.map(id => ({ id, instance: byId.get(id) }))
     },
     report: (id: string, signal: AbortSignal) => request<Report>(`/workflows/${encodeURIComponent(id)}`, signal),
+    taskResult: (id: string, taskId: string, generation: number, signal: AbortSignal) => request<{ output?: unknown }>(`/workflows/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/${generation}`, signal),
     async events(id: string, signal: AbortSignal): Promise<EventRecord[]> {
       const events: EventRecord[] = []
       let sequence: number | null = null

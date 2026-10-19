@@ -55,6 +55,10 @@ share the same color.
 Completed diagram nodes and **Success** labels in the instance list, instance
 summary, and task attempts use matching green accents.
 Verifier tasks appear in the diagram and task table alongside other steps.
+Completed attempts have an eye action in the task table. Select it to preview
+that attempt's output as formatted JSON in a dialog. Output loads on demand for
+the selected generation; earlier attempts show their own results. The action is
+disabled for attempts that have not completed.
 Attempts that produced Agent feedback show a speech-bubble action in the task
 table. Select it to read the feedback in a dialog. Feedback arrives with the
 status report, so displaying or opening it needs no additional API requests.

@@ -74,6 +74,20 @@ test('exposes authentication and conflict errors and propagates cancellation', a
   await assert.rejects(api.report('run', controller.signal), { name: 'AbortError' })
 })
 
+test('output preview loads the selected task generation, preserving falsy and null outputs', async () => {
+  for (const output of [{ response: 'earlier attempt' }, '', false, 0, null]) {
+    const signal = new AbortController().signal
+    const api = createApi({ host: 'localhost:3000', apiKey: 'key' }, async (path, options) => {
+      assert.equal(String(path), '/api/workflows/run%2Fa/tasks/task%2Fb/2')
+      assert.equal(options?.method, 'GET')
+      assert.equal(options?.signal, signal)
+      assert.equal(new Headers(options?.headers).get('Authorization'), 'Bearer key')
+      return Response.json({ status: 'success', output })
+    })
+    assert.deepEqual(await api.taskResult('run/a', 'task/b', 2, signal), { status: 'success', output })
+  }
+})
+
 test('validates host settings', () => {
   assert.equal(normalizeHost('localhost:4000'), 'http://localhost:4000')
   assert.equal(normalizeHost('https://example.com/'), 'https://example.com')
