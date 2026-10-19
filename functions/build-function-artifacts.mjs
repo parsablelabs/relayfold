@@ -27,7 +27,7 @@ export async function buildFunctionArtifacts({ root, functions }) {
     const dependencyYaml = dependencies.length === 0
       ? ["dependencies: []"]
       : ["dependencies:", ...dependencyLines(dependencies)];
-    const yaml = [`id: ${def.id}`, ...dependencyYaml, "code: |", indent(code.trimEnd(), 2), ""].join("\n");
+    const yaml = [`id: ${JSON.stringify(def.id)}`, ...dependencyYaml, "code: |", indent(code.trimEnd(), 2), ""].join("\n");
     await writeFile(join(distDir, `${def.id}.yaml`), yaml, "utf8");
     await writeFile(join(distDir, `${def.id}.json`), `${JSON.stringify(functionDef, null, 2)}\n`, "utf8");
   }
@@ -166,8 +166,8 @@ function formatDiagnostics(ts, diagnostics) {
 
 function dependencyLines(dependencies) {
   return dependencies.flatMap((dependency) => [
-    `  - name: ${dependency.name}`,
-    `    version: ${dependency.version}`,
+    `  - name: ${JSON.stringify(dependency.name)}`,
+    `    version: ${JSON.stringify(dependency.version)}`,
   ]);
 }
 

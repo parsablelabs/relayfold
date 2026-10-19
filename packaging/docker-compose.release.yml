@@ -2,9 +2,11 @@
 services:
   orchestrator:
     image: ${RELAYFOLD_ORCHESTRATOR_IMAGE}
+    user: "${RELAYFOLD_WORKER_UID:-10001}:${RELAYFOLD_WORKER_GID:-10001}"
     ports:
       - "${RELAYFOLD_PUBLIC_HTTP_BIND:-127.0.0.1:3000}:3000"
     environment:
+      RELAYFOLD_OAUTH_DIR: /var/lib/relayfold/oauth
       RELAYFOLD_USE_GLOBAL_NAMESPACE: "true"
       RELAYFOLD_WORKER_HTTP_ADDR: 0.0.0.0:3001
       RELAYFOLD_STORAGE: ${RELAYFOLD_STORAGE:-sqlite}
@@ -12,6 +14,8 @@ services:
       RELAYFOLD_MAX_CONCURRENT_WORKFLOWS: ${RELAYFOLD_MAX_CONCURRENT_WORKFLOWS:-1}
       RELAYFOLD_WORKFLOW_QUEUE_CAPACITY: ${RELAYFOLD_WORKFLOW_QUEUE_CAPACITY:-1024}
       RELAYFOLD_TASK_TIMEOUT_SECS: ${RELAYFOLD_TASK_TIMEOUT_SECS:-300}
+    volumes:
+      - ${RELAYFOLD_HOME}/oauth:/var/lib/relayfold/oauth
     read_only: true
     tmpfs:
       - /tmp

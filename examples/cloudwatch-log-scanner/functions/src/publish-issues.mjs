@@ -40,14 +40,12 @@ export function createPublisher({ fetch = globalThis.fetch } = {}) {
       if (
         finding.labels !== undefined &&
         (!Array.isArray(finding.labels) ||
-          finding.labels.length > 2 ||
+          finding.labels.length > 1 ||
           new Set(finding.labels).size !== finding.labels.length ||
-          finding.labels.some(
-            (label) => !["bug", "relayfold:human-input-needed"].includes(label),
-          ))
+          finding.labels.some((label) => label !== "bug"))
       )
         throw new Error(
-          "Optional finding labels may contain only bug and relayfold:human-input-needed without duplicates",
+          "Optional finding labels may contain only bug without duplicates",
         );
       if (
         !finding.title ||
@@ -144,16 +142,13 @@ export function createPublisher({ fetch = globalThis.fetch } = {}) {
         body: JSON.stringify({
           title: finding.title,
           body,
-          labels: labels.filter(
-            (label) => label !== "relayfold:human-input-needed",
-          ),
+          labels,
         }),
       });
       issues.push(issue);
       created.push({
         repository: scan.repository,
         issue_number: issue.number,
-        human_input_needed: labels.includes("relayfold:human-input-needed"),
         fingerprint: finding.fingerprint,
         issue_url: issue.html_url,
       });

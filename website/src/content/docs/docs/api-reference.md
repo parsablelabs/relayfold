@@ -831,3 +831,21 @@ Response:
   "status": "accepted"
 }
 ```
+
+### Request OAuth access credentials (worker API)
+
+`POST /workers/auth/{provider}` returns the installation's usable access token
+and `expires_at` as a Unix timestamp in milliseconds. It renews tokens centrally
+when they approach expiry and never returns refresh tokens. Responses use
+`Cache-Control: no-store`. Missing authorization or credential/refresh failures
+return `503` with an `error` message, which workers handle through existing task
+failure behavior.
+
+Only `openai-codex` is supported initially, using
+`POST /workers/auth/openai-codex`. Unsupported providers return `404` with an
+`error` message.
+
+This endpoint is on the worker API, not the public API. It assumes trusted
+callers and performs no worker API-key validation in this initial implementation.
+It is used by the worker model-credential adapter before each Codex request;
+application clients do not need to call it.

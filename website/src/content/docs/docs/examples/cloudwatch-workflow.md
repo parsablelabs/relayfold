@@ -21,7 +21,6 @@ flowchart TD
     Analyze["analyze-main: draft findings or return empty object"]
     Verify{"verify-analysis: accept or retry?"}
     Publish["publish-issues: create labeled issues or finish with no work"]
-    Labels["apply-labels: mark issues needing human input"]
     Done["Completed"]
     Failed["Failed: final generation rejected"]
 
@@ -43,8 +42,7 @@ flowchart TD
     Verify -->|"complete + unchanged analysis or empty object"| Publish
     Prepare --> Publish
     Verify -->|"continue at retry limit"| Failed
-    Publish --> Labels
-    Labels --> Done
+    Publish --> Done
 </pre>
 
 1. `scan-cloudwatch` uses the AWS SDK to fetch paginated WARN/WARNING/ERROR keyword matches from each explicit region and log group. It normalizes recurring messages, counts occurrences, and retains up to three original samples per pattern for selection and analysis. It returns `_workflow_exit_reason: "No matching log patterns were found."` when no patterns were collected, requesting successful early completion.
@@ -55,14 +53,19 @@ flowchart TD
 6. `verify-analysis` is an Agent that reviews the analysis against scan evidence and relevant repository context. It accepts the unchanged analysis or returns actionable feedback to retry `analyze-main`. The loop permits three generations and fails if the last is rejected; scanning is not repeated.
 7. `publish-issues` consumes the accepted verifier output, validates the drafts and checks all existing issues for stable fingerprint markers before submitting them. Each issue includes **Problem**, **Goal**, **Acceptance Criteria**, and **Notes**, with log evidence, code permalinks, root-cause reasoning, and regression-test criteria.
 
-8. `apply-labels` uses the shared `github.apply_labels` Function to add `relayfold:human-input-needed` to newly published issues whose verified findings require human decisions or missing information. It creates the repository label if needed and confirms application. Dry runs and no-work results make no labeling requests.
+Analysis and verification assess whether each finding requires critical human decisions or missing information. Those findings list specific questions under Notes and prerequisites in Acceptance Criteria. A developer applies `relayfold:agent-ready` to start the [issue-to-PR workflow](/relayfold/docs/examples/github-issue-pr-workflow/), which asks for missing information through `ask_user` within the run. The scanner does not apply a human-input label or automatically authorize implementation.
 
-Analysis and verification assess whether each finding is immediately implementable. Flagged findings must list specific questions under Notes and distinguish human prerequisites from implementation tasks in Acceptance Criteria. Routine implementation choices and code investigation do not require the label. A human supplies the answers in an issue comment and removes `relayfold:human-input-needed`; the issue-to-PR workflow rejects the issue until that label is removed.
+Agent output structure comes from the effective output schema supplied by the
+worker. Prompts describe field meanings and task decisions without duplicating
+JSON output examples.
 
 All three Agent tasks (`select-group`, `analyze-main`, and `verify-analysis`) enable
 `allow_agent_feedback: true` to report optional environment and setup observations
 in `_agent_provided_feedback`. Inspect this field in each task attempt's output;
 it is separate from verifier retry feedback and does not affect workflow control.
+The analysis uses a plain object schema with conditional required fields, preserving its
+empty-analysis result while allowing RelayFold to add the optional feedback field.
+Deterministic Functions do not request Agent feedback.
 See [Agent feedback](/relayfold/docs/concepts/workflow-yaml/#agent-feedback).
 
 New issues receive the `relayfold` label so later runs include them in semantic duplicate inspection. Analysis may also select the optional `bug` label when log and code evidence establish a clear bug, with the defect explained in the issue body and checked by the verifier. General improvements and uncertain hypotheses do not receive `bug`. Dry-run drafts include the labels that would be published. That inspection covers open labeled issues; the publisher also checks fingerprint markers across open and closed issues immediately before creating new ones.
@@ -74,7 +77,7 @@ successfully before any Agent runs. Both `scan-cloudwatch` and
 
 RelayFold adds the optional reason field to their output schemas automatically.
 Nonempty scans return `null` and continue. A nonempty reason skips remaining
-pending tasks, including analysis, verification, publishing, and labeling. The
+pending tasks, including analysis, verification, publishing. The
 triggering task records `early_exit: true`; its output explains whether the scan
 was empty or its patterns were already covered by open issues. The triggering output is retained, including the scan
 window, counts, and truncation information. Independent issue fetching may already
@@ -132,14 +135,14 @@ Grouping normalizes IDs and numbers only in an internal signature, not in sample
 ## Build, test, and register Functions
 
 The workflow references `cloudwatch-log-scanner.scan_cloudwatch`, `cloudwatch-log-scanner.fetch_issues`,
-`cloudwatch-log-scanner.prune_covered_logs`, `cloudwatch-log-scanner.prepare_selected_group`, and `cloudwatch-log-scanner.publish_issues`. The shared label step references `github.apply_labels` from [`examples/functions`](https://github.com/parsablelabs/relayfold/tree/main/examples/functions). The scanner Functions' standalone source, manifest, tests, and
+`cloudwatch-log-scanner.prune_covered_logs`, `cloudwatch-log-scanner.prepare_selected_group`, and `cloudwatch-log-scanner.publish_issues`. The scanner Functions' standalone source, manifest, tests, and
 artifact build script live in
 [`examples/cloudwatch-log-scanner/functions`](https://github.com/parsablelabs/relayfold/tree/main/examples/cloudwatch-log-scanner/functions).
 Issue fingerprint markers use the `cloudwatch-log-scanner-cloudwatch` prefix.
 Issues created with the previous prefix no longer match the publisher's exact
 fingerprint check; analysis still compares the fetched open issues for duplicates.
 
-Register the four scanner Functions and the shared labeling Function before executing the workflow:
+Register the five scanner Functions before executing the workflow:
 
 ```bash
 cd examples/cloudwatch-log-scanner/functions
@@ -156,17 +159,35 @@ curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.prepare_selected_group.json
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.publish_issues.json
-cd ../../functions
-npm test
-curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
-  --data-binary @dist/github.apply_labels.json
-cd ../..
+cd ../../..
 ```
 
 Tests assert nonempty scanner results from known log fixtures, returned counts
 and original samples, truncation at limits, empty pages, errors, and issue publishing behavior.
 They also exercise the generated scanner with the real AWS SDK against a local
 CloudWatch protocol server. Automated tests do not call AWS or GitHub.
+
+If `scan-cloudwatch` fails output schema validation after updating the workflow,
+rebuild and replace the registered scanner Function. Early exit requires a
+Function that returns `_workflow_exit_reason`; the field is optional in the
+effective schema, but an older Function that omits it cannot request exit.
+Updating the workflow alone does not update registered Function code:
+
+```bash
+cd examples/cloudwatch-log-scanner/functions
+npm run build
+curl -fsS -X POST "$RELAYFOLD_URL/function-def?overwrite=true" \
+  --data-binary @dist/cloudwatch-log-scanner.scan_cloudwatch.json
+```
+
+Re-register any other changed Functions the same way, then start a new workflow
+run. An empty scan returns a nonempty exit reason; a scan with matching patterns
+returns `_workflow_exit_reason: null`. Both satisfy the example's output schema.
+
+If an older generated YAML artifact is rejected as invalid JSON/YAML, rebuild
+it or register the JSON artifact instead. Scoped npm dependency names such as
+`"@aws-sdk/client-cloudwatch-logs"` must be quoted in YAML; the current builder
+quotes dependency names and versions automatically.
 
 To format the standalone JavaScript, run `npm run format` from
 `examples/cloudwatch-log-scanner/functions`. It formats `src/`, `scripts/`, and `test/`, excluding

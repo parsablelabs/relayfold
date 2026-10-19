@@ -1,6 +1,7 @@
 export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
   return async function run({ inputs, credentials }) {
-    const { repository, issue_number, pr_number } = inputs[0] ?? {};
+    const { repository, issue_number } = inputs[0] ?? {};
+    let { pr_number } = inputs[0] ?? {};
     if (
       typeof repository !== "string" ||
       !/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repository)
@@ -9,7 +10,10 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
     if (issue_number !== undefined && (!Number.isSafeInteger(issue_number) || issue_number < 1))
       throw new Error("Specify a positive integer issue_number");
 
-    if (pr_number !== undefined && (!Number.isSafeInteger(pr_number) || pr_number < 1))
+    if (
+      pr_number !== undefined &&
+      (!Number.isSafeInteger(pr_number) || pr_number < 1)
+    )
       throw new Error("Specify a positive integer pr_number");
 
     if (pr_number !== undefined && issue_number === undefined)
@@ -30,7 +34,6 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
       return response.json();
     }
 
-    const blockedLabels = ["relayfold:pr-created", "relayfold:human-input-needed"];
     function hasLabel(issue, name) {
       return issue.labels.some((label) => (label?.name ?? label) === name);
     }
@@ -45,19 +48,21 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
     if (selectedNumber === undefined) {
       for (let page = 1; ; page++) {
         if (page > 100) throw new Error("GitHub issue pagination limit reached");
-        const batch = await api(`/issues?state=open&labels=relayfold&sort=created&direction=asc&per_page=100&page=${page}`);
+        const batch = await api(`/issues?state=open&labels=relayfold:agent-ready&sort=created&direction=asc&per_page=100&page=${page}`);
         if (!Array.isArray(batch)) throw new Error("Invalid GitHub issues response");
         for (const candidate of batch) {
           validateIssue(candidate);
           if (selectedNumber === undefined && candidate.state === "open" &&
-              !candidate.pull_request && hasLabel(candidate, "relayfold") &&
-              !blockedLabels.some((label) => hasLabel(candidate, label)))
+              !candidate.pull_request && hasLabel(candidate, "relayfold:agent-ready"))
             selectedNumber = candidate.number;
         }
         if (batch.length < 100) break;
       }
       if (selectedNumber === undefined)
-        throw new Error(`No eligible open issues labeled "relayfold" in ${repository}`);
+        return {
+          repository,
+          _workflow_exit_reason: `No eligible open issues labeled "relayfold:agent-ready" in ${repository}`,
+        };
     }
 
     const issue = await api(`/issues/${selectedNumber}`);
@@ -66,17 +71,34 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
     if (issue_number === undefined && issue.state !== "open")
       throw new Error("Selected issue is no longer open; rerun to select another issue");
     if (issue.pull_request)
-      throw new Error("Requested number identifies a pull request, not an issue");
-    if (!hasLabel(issue, "relayfold"))
-      throw new Error('Issue must have the "relayfold" label');
-    for (const blocked of blockedLabels)
-      if (hasLabel(issue, blocked))
-        throw new Error(`Issue is excluded by the "${blocked}" label`);
+      throw new Error(
+        "Requested number identifies a pull request, not an issue",
+      );
+    const issueOutput = {
+      repository,
+      issue_number: issue.number,
+      issue_url: issue.html_url,
+      title: issue.title,
+      state: issue.state.toUpperCase(),
+      body: issue.body ?? "",
+      comments: [],
+    };
+    if (
+      !issue.labels.some(
+        (label) => (label?.name ?? label) === "relayfold:agent-ready",
+      )
+    )
+      return {
+        ...issueOutput,
+        _workflow_exit_reason:
+          'Issue does not have the "relayfold:agent-ready" label.',
+      };
 
     async function allComments(path) {
       const comments = [];
       for (let page = 1; ; page++) {
-        if (page > 100) throw new Error("GitHub comment pagination limit reached");
+        if (page > 100)
+          throw new Error("GitHub comment pagination limit reached");
         const batch = await api(`${path}?per_page=100&page=${page}`);
         if (!Array.isArray(batch))
           throw new Error("Invalid GitHub comments response");
@@ -84,15 +106,54 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
         if (batch.length < 100) return comments;
       }
     }
-    const comments = (await allComments(`/issues/${selectedNumber}/comments`)).map((comment) => comment.body ?? "");
+    const commentBodies = async (path) =>
+      (await allComments(path)).map((comment) => comment.body ?? "");
+    const comments = await commentBodies(`/issues/${selectedNumber}/comments`);
+    if (pr_number === undefined) {
+      // New summaries carry a stable marker; legacy summaries have no marker but link to the PR.
+      const summary = comments.findLast((body) =>
+        body.includes("<!-- relayfold:issue-to-pr -->"),
+      );
+      const candidates = summary ? [summary] : comments;
+      const prefix = `https://github.com/${repository}/pull/`;
+      const numbers = new Set(
+        candidates.flatMap((body) =>
+          body
+            .split(prefix)
+            .slice(1)
+            .flatMap((suffix) => {
+              const match = suffix.match(/^([1-9][0-9]*)(?![0-9A-Za-z_/])/);
+              return match ? [Number(match[1])] : [];
+            }),
+        ),
+      );
+      if (numbers.size > 1)
+        throw new Error("Multiple PR links on the issue; specify pr_number");
+      pr_number = numbers.values().next().value;
+      if (
+        pr_number === undefined &&
+        issue.labels.some(
+          (label) => (label?.name ?? label) === "relayfold:pr-created",
+        )
+      )
+        throw new Error(
+          "Issue is marked pr-created but no PR link was found; specify pr_number",
+        );
+    }
     let pr;
     let change_request;
     if (pr_number !== undefined) {
+      if (!Number.isSafeInteger(pr_number) || pr_number < 1)
+        throw new Error("Invalid PR link; specify pr_number");
       const pull = await api(`/pulls/${pr_number}`);
-      if (!pull || pull.number !== pr_number ||
-          typeof pull.title !== "string" || typeof pull.html_url !== "string" ||
-          !["open", "closed"].includes(pull.state) ||
-          typeof pull.head?.ref !== "string")
+      if (
+        !pull ||
+        pull.number !== pr_number ||
+        typeof pull.title !== "string" ||
+        typeof pull.html_url !== "string" ||
+        !["open", "closed"].includes(pull.state) ||
+        typeof pull.head?.ref !== "string"
+      )
         throw new Error("Invalid GitHub pull request response");
       const discussion = await allComments(`/issues/${pr_number}/comments`);
       const reviewComments = await allComments(`/pulls/${pr_number}/comments`);
@@ -129,12 +190,7 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
     }
 
     return {
-      repository,
-      issue_number: issue.number,
-      issue_url: issue.html_url,
-      title: issue.title,
-      state: issue.state.toUpperCase(),
-      body: issue.body ?? "",
+      ...issueOutput,
       comments,
       ...(pr ? { pr, change_request } : {}),
     };

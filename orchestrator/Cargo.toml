@@ -21,5 +21,10 @@ uuid = "1.23.4"
 croner = "4.0.0"
 chrono = "0.4"
 
+reqwest = { version = "0.13.3", default-features = false, features = ["rustls", "json", "form"] }
+base64 = "0.22"
+sha2 = "0.10"
+rand = "0.8"
+
 [dev-dependencies]
 tower = "0.5.3"

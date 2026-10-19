@@ -117,3 +117,22 @@ packaging/build-images.sh --ref vVERSION --tag-prefix registry.example.com/relay
 ```
 
 Use the source-build path for contributor workflows or controlled image publishing. The normal local-user path should stay Docker-first and use published images.
+
+## Orchestrator commands and Codex login
+
+The orchestrator executable requires an explicit command: `orchestrator start`
+runs the server; bare `orchestrator` prints help. Container images pass `start`
+by default. For local source development, `scripts/run-orchestrator-dev.sh`
+also uses `start`.
+
+`orchestrator login openai-codex` connects your existing ChatGPT account without
+a running server or worker. `orchestrator auth-status` checks stored connection
+presence, and `orchestrator logout openai-codex` removes local credentials.
+OAuth data uses `RELAYFOLD_OAUTH_DIR` (default `~/.relayfold/oauth`) and requires
+persistent writable storage on the orchestrator only. Release Compose mounts
+`$RELAYFOLD_HOME/oauth`; `rf init` creates this directory with restrictive
+permissions. The orchestrator runs with the configured installation UID/GID so
+it can write that directory.
+
+See [Task Credentials](/relayfold/docs/operations/credentials/#codex-subscription-sign-in)
+for headless and Docker login instructions and selecting Codex models.

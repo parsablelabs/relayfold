@@ -80,10 +80,14 @@ curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/cloudwatch-log-scanner.publish_issues.json
 ```
 
-Also build and register `github.apply_labels` from `examples/functions` before executing this workflow; see that directory's README.
-
 Then register the updated workflow from the repository root. Artifacts are generated
 and ignored by Git; build them from the committed sources and pinned lockfile.
+
+When updating an existing Function, rebuild and use `/function-def?overwrite=true`
+to replace its registered code. Updating the workflow does not update Functions.
+In particular, older scanner artifacts omit `_workflow_exit_reason` and fail the
+current workflow's output schema validation. Rebuild, replace the registered
+scanner, and start a new run; do not remove the required field from the schema.
 
 ## Input and output contracts
 
@@ -129,14 +133,14 @@ Both `scan-cloudwatch` and `prune-covered-logs` return the reserved top-level
 `_workflow_exit_reason` field and enable `control.allow_early_exit: true` in the
 workflow. RelayFold automatically adds this optional field to their output schemas. An empty scan or
 fully covered scan completes successfully, skips pending analysis, verification,
-publishing, and labeling tasks, and preserves the triggering output. Independent
+publishing tasks, and preserves the triggering output. Independent
 issue fetching may already have run. When patterns remain, `select-group` ranks them by actual severity and likely user impact, using recurrence and recency as tie-breakers. It returns one exact `fingerprint` and a `reason`, without tools or repository inspection. `prepare-selected-group` receives that selection and the pruned scan, rejects unknown fingerprints, and passes only the selected original group to analysis, verification, and publishing. All scan metadata is preserved; `total_events` still counts the original scan. The selection reason remains available in the selector task output. Selection requires a non-null fingerprint identifying an existing group; empty scans terminate upstream during scanning or pruning. Selection does not persist a cursor: unselected patterns are reconsidered on later scans, and a repeatedly selected pattern producing no issue can delay others. A no-actionable-findings analysis
 still goes through verification; these Agents do not return the reserved exit field.
 
 `publish_issues` accepts the selected single-group scanner output and an accepted verifier envelope
 `{"decision":"complete","output":<analysis>}` in `inputs` (in either order).
 Nonempty analysis must contain `commit_sha`, `summary`, and `findings`.
-Each finding may include `bug` for a clear code defect and `relayfold:human-input-needed` for critical decisions or missing information that require a human. Both classifications are checked by the verifier. Flagged issues list specific questions under Notes and human prerequisites in Acceptance Criteria. Both labels may be present; omission or `[]` means neither applies. The publisher adds `relayfold` and optional `bug` on creation; the shared `github.apply_labels` step applies the human-input label afterward. Dry-run drafts include all planned labels. Newly created entries include `repository`, `issue_number`, and `human_input_needed` for the shared step. A human adds the missing information in a comment and removes the human-input label to allow the issue-to-PR workflow to proceed.
+Each finding may include only the optional `bug` label for a clear code defect, checked by the verifier. Findings requiring critical human decisions list specific questions under Notes and prerequisites in Acceptance Criteria. The publisher adds `relayfold` and optional `bug` directly, including them in dry-run drafts. `relayfold` identifies scanner issues for duplicate detection; it does not authorize implementation. A developer applies `relayfold:agent-ready` to start the issue-to-PR workflow, whose `ask_user` flow resolves missing information. The scanner neither applies `relayfold:human-input-needed` nor calls the shared labeling Function.
 Each finding has `fingerprint`, `title`, and `body` with Problem, Goal, Acceptance
 Criteria, and Notes sections. At most one finding and one scan group are accepted; the finding fingerprint
 must correspond to the selected group. Analysis and verification must ground every log claim in that group, without combining evidence from other groups. It checks open and closed issues and returns
