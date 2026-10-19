@@ -216,6 +216,19 @@ function InstanceList({ api, status }: { api: Api; status: string }) {
       <tbody>{state.data.map(instance => <tr key={instance.id}><td><Link className="text-button" href={pageUrl('instances', instance.id)}>{instance.id}</Link><div className="muted">{instance.workflow_def_id}</div></td><td><Badge status={instance.status} /></td><td>{date(instance.created_at_epoch_ms)}</td><td>{instance.completed_task_count} / {instance.total_task_count}</td><td>{date(instance.modified_at_epoch_ms)}</td></tr>)}</tbody></table></div>}
   </>
 }
+function Queue({ api }: { api: Api }) {
+  const load = useCallback((signal: AbortSignal) => api.queue(signal), [api])
+  const state = usePolling(load)
+  return <>
+    <Refresh {...state} />
+    <Feedback error={state.error} loading={!state.data} />
+    {state.data && <>
+      <h2 className="section-title">Queued instances · {state.data.length}</h2>
+      {state.data.length === 0 ? <p className="notice">The queue is empty.</p> : <div className="glass-panel table-scroll"><table><thead><tr><th>Instance / Workflow</th><th>Instance status</th><th>Tasks completed</th></tr></thead>
+        <tbody>{state.data.map(({ id, instance }) => <tr key={id}><td><Link className="text-button" href={pageUrl('instances', id)}>{id}</Link>{instance && <div className="muted">{instance.workflow_def_id}</div>}</td><td>{instance ? <Badge status={instance.status} /> : <span className="muted">Details unavailable</span>}</td><td>{instance ? `${instance.completed_task_count} / ${instance.total_task_count}` : '—'}</td></tr>)}</tbody></table></div>}
+    </>}
+  </>
+}
 function HumanInput({ api, report, task, complete, busy }: { api: Api; report: Report; task: Task; complete: () => void; busy: boolean }) {
   const [input, setInput] = useState('')
   const [format, setFormat] = useState('text')
@@ -366,11 +379,11 @@ function App() {
   }, [])
   const [connection, setConnection] = useState<Connection>(() => ({ host: savedHost(), apiKey: '' }))
   const api = useMemo(() => createApi(connection), [connection])
-  const title = !route ? 'Page not found' : page === 'workflows' ? workflowTab === 'register' ? 'Register workflow' : selected ? 'Workflow definition' : 'Workflows' : page === 'functions' ? workflowTab === 'register' ? 'Register function' : selected ? 'Function definition' : 'Functions' : page === 'settings' ? 'Settings' : selected ? 'Instance details' : 'Instances'
+  const title = !route ? 'Page not found' : page === 'workflows' ? workflowTab === 'register' ? 'Register workflow' : selected ? 'Workflow definition' : 'Workflows' : page === 'functions' ? workflowTab === 'register' ? 'Register function' : selected ? 'Function definition' : 'Functions' : page === 'queue' ? 'Queue' : page === 'settings' ? 'Settings' : selected ? 'Instance details' : 'Instances'
   return <div className="app-container"><div className="terminal-header"><span className="terminal-brand">[rf] RelayFold</span><span className="muted">workflow orchestrator / console</span></div><aside className="sidebar"><nav className="nav-menu" aria-label="Main navigation">
-    {(['workflows', 'functions', 'instances', 'settings'] as const).map(value => <Link key={value} href={pageUrl(value)} className={`nav-item ${page === value ? 'active' : ''}`} aria-current={page === value ? 'page' : undefined}>{page === value && <span className="nav-marker" aria-hidden="true">{'>'}</span>}{value[0].toUpperCase() + value.slice(1)}</Link>)}
+    {(['workflows', 'functions', 'instances', 'queue', 'settings'] as const).map(value => <Link key={value} href={pageUrl(value)} className={`nav-item ${page === value ? 'active' : ''}`} aria-current={page === value ? 'page' : undefined}>{page === value && <span className="nav-marker" aria-hidden="true">{'>'}</span>}{value[0].toUpperCase() + value.slice(1)}</Link>)}
     </nav><div className="sidebar-host">Public API<br /><span>{connection.host}</span></div></aside>
-    <main className="main-content"><header className="page-header"><div><h1 className="page-title">{title}</h1><p className="page-subtitle">{!route ? 'This address does not match a console page.' : page === 'workflows' ? 'Browse and register workflow definitions.' : page === 'functions' ? 'Browse and register reusable functions.' : page === 'settings' ? 'Configure your orchestrator connection.' : 'Monitor workflow execution and respond to input requests.'}</p></div></header>
+    <main className="main-content"><header className="page-header"><div><h1 className="page-title">{title}</h1><p className="page-subtitle">{!route ? 'This address does not match a console page.' : page === 'workflows' ? 'Browse and register workflow definitions.' : page === 'functions' ? 'Browse and register reusable functions.' : page === 'queue' ? 'Workflows waiting for processing in the current namespace.' : page === 'settings' ? 'Configure your orchestrator connection.' : 'Monitor workflow execution and respond to input requests.'}</p></div></header>
       {!route ? <Link className="text-button" href="/instances">Go to instances</Link> : page === 'settings' ? <Settings connection={connection} save={setConnection} /> : <div key={connection.host + connection.apiKey}>
         {page === 'workflows' ? <>
           <DefinitionTabs section="workflows" tab={workflowTab} select={value => navigate(value === 'register' ? '/workflows?tab=register' : '/workflows')} />
@@ -380,7 +393,7 @@ function App() {
           <div id="workflows-register-panel" role="tabpanel" aria-labelledby="workflows-register-tab" hidden={workflowTab !== 'register'}>
             <RegisterDefinition kind="workflow" api={api} browse={() => navigate('/workflows')} />
           </div>
-        </> : page === 'functions' ? <Functions api={api} selected={selected} tab={workflowTab} /> : selected ? <InstanceDetails key={selected} api={api} id={selected} tab={route.instanceTab} /> : <Instances api={api} />}
+        </> : page === 'queue' ? <Queue api={api} /> : page === 'functions' ? <Functions api={api} selected={selected} tab={workflowTab} /> : selected ? <InstanceDetails key={selected} api={api} id={selected} tab={route.instanceTab} /> : <Instances api={api} />}
       </div>}
     </main><footer className="terminal-footer"><span>RelayFold / {title.toLowerCase()}</span><span>Tab to navigate · Enter to activate</span></footer></div>
 }

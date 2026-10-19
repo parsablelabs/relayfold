@@ -9,6 +9,8 @@ test('opens each list and detail view from its URL', () => {
     assert.equal(parseRoute(`/${page}/123`)?.page, page)
   }
   assert.equal(parseRoute('/settings')?.page, 'settings')
+  assert.equal(parseRoute(pageUrl('queue'))?.page, 'queue')
+  assert.equal(parseRoute('/queue/')?.page, 'queue')
   assert.equal(parseRoute('/')?.page, 'instances')
 })
 
@@ -32,7 +34,7 @@ test('restores registration and events tabs from URLs without treating IDs as ta
 test('accepts trailing slashes and rejects unknown or malformed paths', () => {
   assert.equal(parseRoute('/workflows/')?.page, 'workflows')
   assert.equal(parseRoute('/instances/run/')?.id, 'run')
-  for (const path of ['/unknown', '/settings/123', '/functions/123/extra', '/functions/%ZZ', '/functions//']) {
+  for (const path of ['/unknown', '/queue/123', '/settings/123', '/functions/123/extra', '/functions/%ZZ', '/functions//']) {
     assert.equal(parseRoute(path), undefined, path)
   }
 })

@@ -25,6 +25,16 @@ all highlighted; older attempts remain in the task table. The workflow YAML is
 loaded once when opening an instance and reused as status changes. Workflow
 definition pages also load YAML once, with manual Refresh available.
 
+**Queue** (`/queue`) shows queued instance IDs linked to their details, workflow
+names, current instance statuses, and task completion counts for the current
+namespace. It refreshes every five seconds, even when empty, and supports manual
+Refresh through the same shared polling hook as the other views. Entries retain
+the order returned by the queue API. Instance details are joined from the instance
+list; unavailable details do not hide queued IDs. The queue snapshot and instance
+statuses can change between requests. This view shows workflows waiting for
+processing, rather than the worker task dispatch queue or already dequeued work.
+A nonempty queue loads all instance-list pages to retrieve current statuses.
+
 ## Start locally
 
 ```bash

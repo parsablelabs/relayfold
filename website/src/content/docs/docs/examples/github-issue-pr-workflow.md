@@ -32,25 +32,36 @@ The token must be able to read the target repository issue and comments, push a 
 ## Inputs
 
 The workflow's `example_input` prefills the UI JSON trigger input with
-`repository: parsablelabs/relayfold` and `issue_number: 46`. Replace these with
-the repository and issue you want to implement before starting a run.
+`repository: parsablelabs/relayfold`. Replace this with your repository before
+starting a run.
 
-The first task requires one input object with the issue identifiers:
+The first task requires only a repository:
 
 ```json
 {
-  "repository": "parsablelabs/relayfold",
-  "issue_number": 46
+  "repository": "parsablelabs/relayfold"
 }
 ```
 
-The requested issue must have the exact `relayfold` label. Issues without that label and pull request numbers fail the fetch task before implementation begins. Issues labeled `relayfold:pr-created` or `relayfold:human-input-needed` also fail fetching before implementation begins. Open and closed issues are otherwise accepted.
+When `issue_number` is omitted, the fetch Function reads all pages of open issues
+with the `relayfold` label and selects the oldest eligible issue by creation time.
+It skips pull requests and issues carrying `relayfold:pr-created` or
+`relayfold:human-input-needed`. It rechecks the selected issue's state and labels
+before fetching comments. If none qualify or listing fails, the fetch step fails
+before implementation begins. Selection uses the
+[repository issues API](https://docs.github.com/en/rest/issues/issues#list-repository-issues).
+
+Add `"issue_number": 46` to choose a specific issue. Supplying `pr_number` also
+requires `issue_number`. Automatic selection does not claim or lock an issue;
+avoid concurrent runs for the same repository to prevent duplicate work.
+
+The requested issue must have the exact `relayfold` label. Issues without that label and pull request numbers fail the fetch task before implementation begins. Issues labeled `relayfold:pr-created` or `relayfold:human-input-needed` also fail fetching before implementation begins. Explicit `issue_number` selection accepts open and closed issues; automatic selection accepts only open issues.
 
 ## Flow
 
 <pre class="mermaid">
 flowchart TD
-    Input["Issue input: repository + issue_number"]
+    Input["Issue input: repository + optional issue_number"]
     Fetch["fetch-issue-and-pr: Function reads relayfold-labeled issue"]
     Implement["implement-change: edit shared repo workspace"]
     Review{"review-implementation accepts?"}
@@ -121,15 +132,14 @@ curl -fsSL https://raw.githubusercontent.com/parsablelabs/relayfold/main/example
 
 ## Execute the workflow
 
-Replace the repository and issue number with the issue you want the workflow to
-implement:
+Replace the repository with the repository whose next eligible issue you want
+the workflow to implement:
 
 ```bash
-curl -fsS -X POST "$RELAYFOLD_URL/workflow-def/github-issue-pr-workflow" \
+curl -fsS -X POST "$RELAYFOLD_URL/workflow-def/github-issue-to-pr" \
   -H 'content-type: application/json' \
   -d '{
-    "repository": "parsablelabs/relayfold",
-    "issue_number": 46
+    "repository": "parsablelabs/relayfold"
   }'
 ```
 
@@ -162,7 +172,8 @@ conversation comments, inline review comments, and submitted reviews as
 `change_request`, including its body and URL. Selection uses creation time for
 comments and submission time for reviews. Bot comments, pending reviews, and
 marked RelayFold summaries are excluded. Fetching fails when no eligible feedback
-is available.
+is available. Supply `pr_number` explicitly; the fetch Function does not
+automatically discover PRs from issue comments or status labels.
 
 Implementation checks out the supplied PR head branch and continues from its
 existing implementation. It focuses on `change_request`, using the issue

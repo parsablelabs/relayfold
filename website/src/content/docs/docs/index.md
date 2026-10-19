@@ -78,11 +78,21 @@ Event summaries include the task name for task and verifier events. Failed statu
 changes appear in red and successful status changes in green, with status text
 shown alongside the event name. Workflow-wide events have no task name.
 
+Use **Queue** to see workflows waiting for processing in your current namespace.
+The page shows the queued count, instance IDs linked to their details, workflow
+names, instance statuses, and task completion counts. It refreshes every five
+seconds, including when empty, and offers a manual **Refresh** button. Instance
+statuses describe the workflow state; they can be **Pending** or **Running**
+when queued for further processing. Queue contents and instance details are read
+separately, so an entry whose details are unavailable remains visible until the
+next refresh. This view excludes work already dequeued for processing and does
+not show the worker task dispatch queue.
+
 Configure the orchestrator's public API host in **Settings**. The host is saved
 in your browser. Controls support standard Tab navigation and Enter activation.
 
-Console pages have shareable URLs: `/functions`, `/workflows`, `/instances`, and
-`/settings`. Detail pages append the definition or instance ID, such as
+Console pages have shareable URLs: `/functions`, `/workflows`, `/instances`,
+`/queue`, and `/settings`. Detail pages append the definition or instance ID, such as
 `/functions/format.hello` or `/instances/123`. Links support opening in a new tab,
 and browser Back and Forward restore the previous view. Refreshing a detail URL
 opens that same view. `/` opens the instance list.

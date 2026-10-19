@@ -244,3 +244,40 @@ test('loads attempt feedback with the status report in a single request', async 
   assert.equal(result.tasks[1].agent_feedback, undefined)
   assert.deepEqual(calls, ['/api/workflows/run'])
 })
+
+
+test('loads queued instances in queue order with current statuses across instance pages', async () => {
+  const controller = new AbortController()
+  const calls: string[] = []
+  const running = instance('older', 100)
+  const pending = { ...instance('newer', 300), status: 'Pending' }
+  const api = createApi({ host: 'localhost:3000', apiKey: 'key' }, async (path, options) => {
+    const url = new URL(String(path), 'http://frontend')
+    calls.push(url.pathname)
+    assert.equal(options?.signal, controller.signal)
+    assert.equal(new Headers(options?.headers).get('Authorization'), 'Bearer key')
+    if (url.pathname === '/api/workflow-queue') return Response.json({ pending: ['older', 'missing', 'newer'] })
+    assert.equal(url.pathname, '/api/workflows')
+    assert.equal(url.searchParams.has('status'), false)
+    return Response.json(url.searchParams.has('cursor')
+      ? { workflows: [running], next_cursor: null }
+      : { workflows: [pending, instance('unqueued', 500)], next_cursor: 'next' })
+  })
+  assert.deepEqual(await api.queue(controller.signal), [
+    { id: 'older', instance: running },
+    { id: 'missing', instance: undefined },
+    { id: 'newer', instance: pending },
+  ])
+  assert.deepEqual(calls, ['/api/workflow-queue', '/api/workflows', '/api/workflows'])
+})
+
+test('an empty queue skips instance history and queue failures are reported', async () => {
+  const api = createApi({ host: 'localhost:3000', apiKey: '' }, async path => {
+    assert.equal(String(path), '/api/workflow-queue')
+    return Response.json({ pending: [] })
+  })
+  const signal = new AbortController().signal
+  assert.deepEqual(await api.queue(signal), [])
+  const unavailable = createApi({ host: 'localhost:3000', apiKey: '' }, async () => new Response('', { status: 502 }))
+  await assert.rejects(unavailable.queue(signal), /Cannot reach the orchestrator/)
+})

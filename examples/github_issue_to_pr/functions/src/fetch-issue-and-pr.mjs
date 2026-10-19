@@ -6,11 +6,14 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
       !/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repository)
     )
       throw new Error("Specify repository as GitHub owner/repo");
-    if (!Number.isSafeInteger(issue_number) || issue_number < 1)
+    if (issue_number !== undefined && (!Number.isSafeInteger(issue_number) || issue_number < 1))
       throw new Error("Specify a positive integer issue_number");
 
     if (pr_number !== undefined && (!Number.isSafeInteger(pr_number) || pr_number < 1))
       throw new Error("Specify a positive integer pr_number");
+
+    if (pr_number !== undefined && issue_number === undefined)
+      throw new Error("Specify issue_number when supplying pr_number");
 
     const base = `https://api.github.com/repos/${repository}`;
     async function api(path) {
@@ -27,37 +30,63 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
       return response.json();
     }
 
-    const issue = await api(`/issues/${issue_number}`);
-    if (
-      !issue ||
-      issue.number !== issue_number ||
-      typeof issue.title !== "string" ||
-      typeof issue.html_url !== "string" ||
-      !["open", "closed"].includes(issue.state) ||
-      !Array.isArray(issue.labels)
-    )
-      throw new Error("Invalid GitHub issue response");
+    const blockedLabels = ["relayfold:pr-created", "relayfold:human-input-needed"];
+    function hasLabel(issue, name) {
+      return issue.labels.some((label) => (label?.name ?? label) === name);
+    }
+    function validateIssue(issue) {
+      if (!issue || !Number.isSafeInteger(issue.number) || issue.number < 1 ||
+          typeof issue.title !== "string" || typeof issue.html_url !== "string" ||
+          !["open", "closed"].includes(issue.state) || !Array.isArray(issue.labels))
+        throw new Error("Invalid GitHub issue response");
+    }
+
+    let selectedNumber = issue_number;
+    if (selectedNumber === undefined) {
+      for (let page = 1; ; page++) {
+        if (page > 100) throw new Error("GitHub issue pagination limit reached");
+        const batch = await api(`/issues?state=open&labels=relayfold&sort=created&direction=asc&per_page=100&page=${page}`);
+        if (!Array.isArray(batch)) throw new Error("Invalid GitHub issues response");
+        for (const candidate of batch) {
+          validateIssue(candidate);
+          if (selectedNumber === undefined && candidate.state === "open" &&
+              !candidate.pull_request && hasLabel(candidate, "relayfold") &&
+              !blockedLabels.some((label) => hasLabel(candidate, label)))
+            selectedNumber = candidate.number;
+        }
+        if (batch.length < 100) break;
+      }
+      if (selectedNumber === undefined)
+        throw new Error(`No eligible open issues labeled "relayfold" in ${repository}`);
+    }
+
+    const issue = await api(`/issues/${selectedNumber}`);
+    validateIssue(issue);
+    if (issue.number !== selectedNumber) throw new Error("Invalid GitHub issue response");
+    if (issue_number === undefined && issue.state !== "open")
+      throw new Error("Selected issue is no longer open; rerun to select another issue");
     if (issue.pull_request)
       throw new Error("Requested number identifies a pull request, not an issue");
-    if (!issue.labels.some((label) => (label?.name ?? label) === "relayfold"))
+    if (!hasLabel(issue, "relayfold"))
       throw new Error('Issue must have the "relayfold" label');
-    for (const blocked of ["relayfold:pr-created", "relayfold:human-input-needed"])
-      if (issue.labels.some((label) => (label?.name ?? label) === blocked))
+    for (const blocked of blockedLabels)
+      if (hasLabel(issue, blocked))
         throw new Error(`Issue is excluded by the "${blocked}" label`);
 
-    async function commentBodies(path) {
+    async function allComments(path) {
       const comments = [];
       for (let page = 1; ; page++) {
         if (page > 100) throw new Error("GitHub comment pagination limit reached");
         const batch = await api(`${path}?per_page=100&page=${page}`);
         if (!Array.isArray(batch))
           throw new Error("Invalid GitHub comments response");
-        comments.push(...batch.map((comment) => comment.body ?? ""));
+        comments.push(...batch);
         if (batch.length < 100) return comments;
       }
     }
-    const comments = await commentBodies(`/issues/${issue_number}/comments`);
+    const comments = (await allComments(`/issues/${selectedNumber}/comments`)).map((comment) => comment.body ?? "");
     let pr;
+    let change_request;
     if (pr_number !== undefined) {
       const pull = await api(`/pulls/${pr_number}`);
       if (!pull || pull.number !== pr_number ||
@@ -65,8 +94,6 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
           !["open", "closed"].includes(pull.state) ||
           typeof pull.head?.ref !== "string")
         throw new Error("Invalid GitHub pull request response");
-<<<<<<< Updated upstream
-=======
       const discussion = await allComments(`/issues/${pr_number}/comments`);
       const reviewComments = await allComments(`/pulls/${pr_number}/comments`);
       const reviews = await allComments(`/pulls/${pr_number}/reviews`);
@@ -88,7 +115,6 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
           "Existing PR has no developer feedback comment or submitted review; add the requested changes to the PR before rerunning",
         );
       change_request = { body: latest.body, url: latest.html_url ?? "" };
->>>>>>> Stashed changes
       pr = {
         pr_number,
         pr_url: pull.html_url,
@@ -96,15 +122,9 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
         body: pull.body ?? "",
         state: pull.state.toUpperCase(),
         branch: pull.head.ref,
-<<<<<<< Updated upstream
-        comments: await commentBodies(`/issues/${pr_number}/comments`),
-        review_comments: await commentBodies(`/pulls/${pr_number}/comments`),
-        reviews: await commentBodies(`/pulls/${pr_number}/reviews`),
-=======
         comments: discussion.map((comment) => comment.body ?? ""),
         review_comments: reviewComments.map((comment) => comment.body ?? ""),
         reviews: reviews.map((comment) => comment.body ?? ""),
->>>>>>> Stashed changes
       };
     }
 
@@ -116,7 +136,7 @@ export function createIssueAndPrFetcher({ fetch = globalThis.fetch } = {}) {
       state: issue.state.toUpperCase(),
       body: issue.body ?? "",
       comments,
-      ...(pr ? { pr } : {}),
+      ...(pr ? { pr, change_request } : {}),
     };
   };
 }

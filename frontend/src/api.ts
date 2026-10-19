@@ -7,6 +7,7 @@ export type FunctionDefinition = { id: string; dependencies: { name: string; ver
 export type Instance = { id: string; workflow_def_id: string; status: Status; created_at_epoch_ms: number | null; modified_at_epoch_ms: number; completed_at_epoch_ms: number | null; completed_task_count: number; total_task_count: number }
 export type Task = { agent_feedback?: string; task_attempt_id: string; task_def_id: string; generation_index: number; satisfaction: string; status: Exclude<Status, 'Paused' | 'InputNeeded'> | 'Skipped' | { InputNeeded: { input_request: string } } }
 export type Report = { instance_id: string; workflow_def_id: string; status: Status; tasks: Task[]; verifier_states?: unknown[] }
+export type QueueEntry = { id: string; instance?: Instance }
 export type EventRecord = { created_time: number; event: { type: string; [key: string]: unknown } }
 export type InstancePage = { workflows: Instance[]; next_cursor: string | null }
 export type EventPage = { events: EventRecord[]; next_sequence: number | null }
@@ -46,6 +47,19 @@ export function createApi(connection: Connection, transport: typeof fetch = fetc
     }
     return (format === 'text' ? response.text() : response.json()) as Promise<T>
   }
+  async function instances(status: string, signal: AbortSignal): Promise<Instance[]> {
+    const instances = new Map<string, Instance>()
+    let cursor: string | null = null
+    do {
+      const query = new URLSearchParams({ limit: '100' })
+      if (status) query.set('status', status)
+      if (cursor) query.set('cursor', cursor)
+      const page: InstancePage = await request(`/workflows?${query}`, signal)
+      page.workflows.forEach(instance => instances.set(instance.id, instance))
+      cursor = page.next_cursor
+    } while (cursor !== null)
+    return newestFirst([...instances.values()])
+  }
   return {
     functions: (signal: AbortSignal) => request<{ function_defs: FunctionSummary[] }>('/function-def', signal),
     functionDefinition: (id: string, signal: AbortSignal) => request<FunctionDefinition>(`/function-def/${encodeURIComponent(id)}`, signal),
@@ -54,18 +68,12 @@ export function createApi(connection: Connection, transport: typeof fetch = fetc
     startWorkflow: (id: string, input: unknown = null) => request<{ id: string }>(`/workflow-def/${encodeURIComponent(id)}`, undefined, input),
     definition: (id: string, signal: AbortSignal) => request<string>(`/workflow-def/${encodeURIComponent(id)}?format=yaml`, signal, undefined, 'text'),
     workflows: (signal: AbortSignal) => request<{ workflow_defs: Workflow[] }>('/workflow-def', signal),
-    async instances(status: string, signal: AbortSignal): Promise<Instance[]> {
-      const instances = new Map<string, Instance>()
-      let cursor: string | null = null
-      do {
-        const query = new URLSearchParams({ limit: '100' })
-        if (status) query.set('status', status)
-        if (cursor) query.set('cursor', cursor)
-        const page: InstancePage = await request(`/workflows?${query}`, signal)
-        page.workflows.forEach(instance => instances.set(instance.id, instance))
-        cursor = page.next_cursor
-      } while (cursor !== null)
-      return newestFirst([...instances.values()])
+    instances,
+    async queue(signal: AbortSignal): Promise<QueueEntry[]> {
+      const { pending } = await request<{ pending: string[] }>('/workflow-queue', signal)
+      if (pending.length === 0) return []
+      const byId = new Map((await instances('', signal)).map(instance => [instance.id, instance]))
+      return pending.map(id => ({ id, instance: byId.get(id) }))
     },
     report: (id: string, signal: AbortSignal) => request<Report>(`/workflows/${encodeURIComponent(id)}`, signal),
     async events(id: string, signal: AbortSignal): Promise<EventRecord[]> {

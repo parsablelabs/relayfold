@@ -1,4 +1,4 @@
-export type Page = 'functions' | 'workflows' | 'instances' | 'settings'
+export type Page = 'functions' | 'workflows' | 'instances' | 'queue' | 'settings'
 export type Route = {
   page: Page
   id?: string
@@ -14,7 +14,7 @@ export function parseRoute(location: string): Route | undefined {
   const url = new URL(location, 'http://localhost')
   const parts = url.pathname.replace(/\/$/, '').split('/').slice(1)
   const page = url.pathname === '/' ? 'instances' : parts[0]
-  if (!['functions', 'workflows', 'instances', 'settings'].includes(page) || parts.length > 2 || (page === 'settings' && parts.length > 1)) return undefined
+  if (!['functions', 'workflows', 'instances', 'queue', 'settings'].includes(page) || parts.length > 2 || (['settings', 'queue'].includes(page) && parts.length > 1)) return undefined
   let id: string | undefined
   try { id = parts[1] === undefined ? undefined : decodeURIComponent(parts[1]) }
   catch { return undefined }
