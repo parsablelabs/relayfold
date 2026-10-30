@@ -7,6 +7,8 @@ import type { FunctionDependency, TaskExecutionPayload } from '../../core/models
 import type { CredentialsPort } from '../../core/ports/CredentialsPort.js';
 import { resolveCredentialEnvironment } from '../../core/TaskEnvironment.js';
 import { logger } from '../../utils/logger.js';
+import type { TaskSandbox } from '../../core/ports/TaskSandbox.js';
+import type { SessionStore } from '../../core/ports/SessionStore.js';
 
 const DEFAULT_FUNCTION_TIMEOUT_MS = 300_000;
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i;
@@ -25,7 +27,7 @@ type FunctionEnvelope =
     | { status: 'error'; message: string };
 
 export class FunctionExecutor implements TaskExecutor {
-    async execute(payload: TaskExecutionPayload, credentialsPort: CredentialsPort): Promise<TaskExecutionResult> {
+    async execute(payload: TaskExecutionPayload, credentialsPort: CredentialsPort, _sessions?: SessionStore, sandbox?: TaskSandbox): Promise<TaskExecutionResult> {
         if (!('function' in payload.task.kind)) {
             return { status: 'error', message: 'FunctionExecutor received a non-Function task' };
         }
@@ -37,7 +39,7 @@ export class FunctionExecutor implements TaskExecutor {
 
         const dependencies = functionDef.dependencies;
         const timeoutMs = functionTimeoutMs();
-        const workDir = await mkdtemp(join(tmpdir(), 'relayfold-function-'));
+        const workDir = sandbox ? '/tmp/relayfold-function' : await mkdtemp(join(tmpdir(), 'relayfold-function-'));
 
         logger.info(
             { taskId: payload.task.id, dependencyCount: dependencies.length, workDir },
@@ -46,10 +48,11 @@ export class FunctionExecutor implements TaskExecutor {
 
         try {
             validateDependencies(dependencies);
-            await writeRuntimeFiles(workDir, functionDef.code);
+            await sandbox?.mkdir(workDir);
+            await writeRuntimeFiles(workDir, functionDef.code, sandbox);
 
             if (dependencies.length > 0) {
-                const installResult = await installDependencies(workDir, dependencies, timeoutMs);
+                const installResult = await installDependencies(workDir, dependencies, timeoutMs, sandbox);
                 if (installResult.timedOut) {
                     return { status: 'error', message: `Function dependency install timed out after ${timeoutMs}ms` };
                 }
@@ -75,7 +78,8 @@ export class FunctionExecutor implements TaskExecutor {
                 workDir,
                 JSON.stringify(context),
                 timeoutMs,
-                envCredentials
+                envCredentials,
+                sandbox
             );
 
             if (runResult.timedOut) {
@@ -98,25 +102,26 @@ export class FunctionExecutor implements TaskExecutor {
         } catch (error) {
             return { status: 'error', message: error instanceof Error ? error.message : String(error) };
         } finally {
-            await rm(workDir, { recursive: true, force: true });
+            if (!sandbox) await rm(workDir, { recursive: true, force: true });
         }
     }
 }
 
-async function writeRuntimeFiles(workDir: string, code: string): Promise<void> {
-    await writeFile(
+async function writeRuntimeFiles(workDir: string, code: string, sandbox?: TaskSandbox): Promise<void> {
+    const write = sandbox ? sandbox.writeFile.bind(sandbox) : (file: string, content: string) => writeFile(file, content, 'utf8');
+    await write(
         join(workDir, 'package.json'),
-        JSON.stringify({ type: 'module', private: true }, null, 2),
-        'utf8'
+        JSON.stringify({ type: 'module', private: true }, null, 2)
     );
-    await writeFile(join(workDir, 'task.mjs'), code, 'utf8');
-    await writeFile(join(workDir, 'runner.mjs'), runnerSource(), 'utf8');
+    await write(join(workDir, 'task.mjs'), code);
+    await write(join(workDir, 'runner.mjs'), runnerSource());
 }
 
 async function installDependencies(
     workDir: string,
     dependencies: FunctionDependency[],
-    timeoutMs: number
+    timeoutMs: number,
+    sandbox?: TaskSandbox
 ): Promise<ChildResult> {
     const packages = dependencies.map((dependency) => `${dependency.name}@${dependency.version}`);
     return runChild(
@@ -124,7 +129,9 @@ async function installDependencies(
         ['install', '--omit=dev', '--package-lock=false', '--ignore-scripts', ...packages],
         workDir,
         undefined,
-        timeoutMs
+        timeoutMs,
+        {},
+        sandbox
     );
 }
 
@@ -172,8 +179,15 @@ function runChild(
     cwd: string,
     stdin: string | undefined,
     timeoutMs: number,
-    env: Record<string, string> = {}
+    env: Record<string, string> = {},
+    sandbox?: TaskSandbox
 ): Promise<ChildResult> {
+    if (sandbox) {
+        const executable = command === process.execPath ? '/usr/bin/node' : `/usr/bin/${command}`;
+        return sandbox.exec([executable, ...args], {
+            cwd, timeoutMs, ...(stdin !== undefined ? { stdin } : {}),
+        }).then(result => ({ ...result, signal: null, timedOut: false }));
+    }
     return new Promise((resolve, reject) => {
         const child = spawn(command, args, {
             cwd,

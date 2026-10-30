@@ -121,3 +121,37 @@ This pattern is the smallest RelayFold workflow shape:
 - task output is validated with `output_schema`
 - task result can feed downstream tasks through `data_bindings`
 - no credentials or workspace setup are required
+
+## Demonstrate a denied network request
+
+[`examples/example_sandbox_denied_fetch_workflow.yaml`](https://github.com/parsablelabs/relayfold/blob/main/examples/example_sandbox_denied_fetch_workflow.yaml)
+is another single-Function workflow, designed to **fail**. It enables a deny-all
+sandbox with `sandbox: {}` and attempts to fetch
+`https://parsablelabs.github.io/relayfold/`. The Function leaves fetch errors
+uncaught and also throws for an unsuccessful HTTP response, so a denied request
+fails the task rather than returning successful output.
+
+Use a worker with the [sandbox runtime prerequisites](/relayfold/docs/operations/production-deployment/).
+Register and execute it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/parsablelabs/relayfold/main/examples/example_sandbox_denied_fetch_workflow.yaml \
+  | curl -fsS -X POST "$RELAYFOLD_URL/workflow-def" \
+      --data-binary @-
+
+curl -fsS -X POST "$RELAYFOLD_URL/workflow-def/sandbox-denied-fetch-workflow" \
+  -H 'content-type: application/json' \
+  -d '{}'
+```
+
+Registration and execution submission succeed. After execution finishes, the
+workflow status is `Failed`, and the `fetch-website` task records a fetch error.
+Use the returned workflow instance ID to inspect both:
+
+```bash
+curl -fsS "$RELAYFOLD_URL/workflows/<workflow_id>"
+curl -fsS "$RELAYFOLD_URL/workflows/<workflow_id>/tasks/fetch-website"
+```
+
+See [Optional sandbox](/relayfold/docs/concepts/workflow-yaml/#optional-sandbox)
+for workflow defaults and task-level network overrides.

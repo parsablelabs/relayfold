@@ -22,6 +22,7 @@ export interface TaskDef {
     id: string;
     kind: TaskKind;
     allow_agent_feedback?: boolean;
+    sandbox?: SandboxDef;
     control?: TaskControl;
     timeout_secs?: number;
     input_schemas?: any[];
@@ -53,8 +54,13 @@ export interface LoopExecutionContext {
 }
 
 export interface ExecutionMetadata {
+    sandbox?: SandboxDef;
     generation_index?: number;
     loop_context?: LoopExecutionContext;
+}
+
+export interface SandboxDef {
+    network?: { allowed_hosts?: string[] };
 }
 
 export interface TaskExecutionPayload {

@@ -1,7 +1,8 @@
 import { Type } from '@earendil-works/pi-ai';
 import { logger } from '../../../utils/logger.js';
+import type { TaskFetch } from '../../../core/ports/TaskSandbox.js';
 
-export function createFetchUrlTool() {
+export function createFetchUrlTool(request: TaskFetch = fetch) {
     return {
         name: "fetch_url",
         description: "Fetch the markdown content of a specific URL. Use this to read the contents of a website or a page.",
@@ -13,7 +14,7 @@ export function createFetchUrlTool() {
             logger.info(`[FetchUrlTool] Executing fetch_url for url: ${args.url}`);
             
             const jinaUrl = `https://r.jina.ai/${args.url}`;
-            const response = await fetch(jinaUrl, {
+            const response = await request(jinaUrl, {
                 headers: {
                     "Accept": "text/markdown"
                 },

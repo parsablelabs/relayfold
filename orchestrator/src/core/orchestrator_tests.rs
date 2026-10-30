@@ -138,6 +138,7 @@ impl TaskDispatchPort for RecordingIsolatedDispatcher {
 
 fn task(id: &str) -> TaskDef {
     TaskDef {
+        sandbox: None,
         id: id.to_string(),
         kind: TaskTypeDef::Function(FunctionTaskDef::Inline {
             dependencies: vec![],
@@ -161,6 +162,7 @@ fn task(id: &str) -> TaskDef {
 
 fn function_ref_task(id: &str, reference: &str) -> TaskDef {
     TaskDef {
+        sandbox: None,
         id: id.to_string(),
         kind: TaskTypeDef::Function(FunctionTaskDef::Ref {
             reference: reference.to_string(),
@@ -184,6 +186,7 @@ fn function_ref_task(id: &str, reference: &str) -> TaskDef {
 fn workflow(id: &str, tasks: Vec<TaskDef>) -> WorkflowDef {
     WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: id.to_string(),
         description: String::new(),
         tasks,
@@ -779,6 +782,7 @@ async fn create_workflow_def_normalizes_workflow_def_task_def_and_binding_ids() 
             &crate::core::namespace::test_namespace(),
             WorkflowDef {
                 example_input: None,
+                sandbox: None,
                 id: "Workflow_ABC-1".to_string(),
                 description: String::new(),
                 tasks: vec![task_a, task_b],
@@ -878,6 +882,7 @@ async fn verifier_control_rejects_invalid_rerun_from_task_id_values() {
             &crate::core::namespace::test_namespace(),
             WorkflowDef {
                 example_input: None,
+                sandbox: None,
                 id: "workflow1".to_string(),
                 description: String::new(),
                 tasks: vec![task("taska"), missing_target_verifier],
@@ -911,6 +916,7 @@ async fn verifier_control_rejects_invalid_rerun_from_task_id_values() {
             &crate::core::namespace::test_namespace(),
             WorkflowDef {
                 example_input: None,
+                sandbox: None,
                 id: "workflow2".to_string(),
                 description: String::new(),
                 tasks: vec![downstream_target_verifier, task("taskb")],
@@ -944,6 +950,7 @@ async fn verifier_control_rejects_invalid_rerun_from_task_id_values() {
             &crate::core::namespace::test_namespace(),
             WorkflowDef {
                 example_input: None,
+                sandbox: None,
                 id: "workflow3".to_string(),
                 description: String::new(),
                 tasks: vec![task("taska"), task("taskb"), unrelated_target_verifier],
@@ -992,6 +999,7 @@ async fn verifier_control_rejects_overlapping_loop_slices() {
             &crate::core::namespace::test_namespace(),
             WorkflowDef {
                 example_input: None,
+                sandbox: None,
                 id: "workflow1".to_string(),
                 description: String::new(),
                 tasks: vec![task("taska"), task("taskb"), verifya, verifyb],

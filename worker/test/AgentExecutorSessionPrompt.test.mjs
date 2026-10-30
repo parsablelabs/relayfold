@@ -199,6 +199,37 @@ test('system instructions are separate from execution data and rebuilt for resto
     }
 });
 
+test('sandbox instructions distinguish restored conversation from a fresh VM and use the current policy', () => {
+    for (const sessionReused of [false, true]) {
+        const args = {
+            prompt: 'Build the project.',
+            workspacePath: '/workspace',
+            inputs: [],
+            ask: false,
+            sessionReused,
+            approvedTools: [],
+            approvedSkills: [],
+            canLoadSkills: false,
+        };
+        assert.doesNotMatch(buildAgentPromptParts(args).systemContext, /SANDBOX ENVIRONMENT/);
+        const denied = buildAgentPromptParts({ ...args, sandbox: {} });
+        assert.match(denied.systemContext, /isolated Linux VM/);
+        assert.match(denied.systemContext, /retries and continuations after a pause for human input/);
+        assert.match(denied.systemContext, /Installed packages, running processes, and files outside mounted directories are discarded/);
+        assert.match(denied.systemContext, /Conversation history may describe tools or dependencies installed in a previous VM/);
+        assert.match(denied.systemContext, /Verify their availability.*reinstall missing dependencies/);
+        assert.match(denied.systemContext, /workspace sharing rules/);
+        assert.match(denied.systemContext, /Outbound task network access is denied/);
+        assert.doesNotMatch(denied.finalPrompt, /SANDBOX ENVIRONMENT/);
+        const allowed = buildAgentPromptParts({
+            ...args, sandbox: { network: { allowed_hosts: ['registry.npmjs.org', '*.example.com'] } },
+        });
+        assert.match(allowed.systemContext, /\["registry.npmjs.org","\*\.example.com"\]/);
+        assert.match(allowed.systemContext, /Private and loopback destinations remain blocked/);
+        assert.doesNotMatch(allowed.systemContext, /Outbound task network access is denied/);
+    }
+});
+
 test('agent feedback instructions follow current permission for fresh and restored sessions', () => {
     for (const sessionReused of [false, true]) {
         const args = {

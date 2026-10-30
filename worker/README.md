@@ -16,7 +16,8 @@ documentation, see:
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 24+
+- For sandboxed workflows: QEMU (`qemu-system-aarch64` or `qemu-system-x86_64`) and `qemu-img`. The worker Docker images include these tools.
 - npm
 - Docker, if building the worker image
 
@@ -57,6 +58,16 @@ Commands in this section run from the `worker/` directory.
 The HTTP tests start local servers on `127.0.0.1` using ephemeral ports. Run
 them in an environment that permits loopback listeners; a sandbox that blocks
 them will report `listen EPERM`.
+
+To verify real Gondolin execution with QEMU installed, run:
+
+```bash
+npm run build
+RELAYFOLD_TEST_GONDOLIN=1 node --test test/GondolinSandbox.integration.test.mjs
+```
+
+The integration test downloads guest assets on first use and exercises public
+HTTP access and npm dependency installation. It is skipped by normal `npm test`.
 
 ## Runtime behavior
 

@@ -326,6 +326,7 @@ impl TaskDispatchPort for PauseDuringTaskDispatcher {
 
 fn task_def(id: &str, output_schema: serde_json::Value) -> TaskDef {
     TaskDef {
+        sandbox: None,
         id: id.to_string(),
         kind: TaskTypeDef::ApiCall {
             url: "http://example.com".to_string(),
@@ -344,6 +345,7 @@ fn task_def(id: &str, output_schema: serde_json::Value) -> TaskDef {
 
 fn agent_task(id: &str, reuse_session: bool) -> TaskDef {
     TaskDef {
+        sandbox: None,
         id: id.to_string(),
         kind: TaskTypeDef::Agent {
             model_id: "test/model".to_string(),
@@ -496,6 +498,7 @@ fn test_workspace_group_does_not_create_scheduling_dependency() {
     let task_b = task_def_with_workspace_group("task-b", "repo");
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-workspace-group-no-edge".to_string(),
         description: String::new(),
         tasks: vec![task_a.clone(), task_b.clone()],
@@ -543,11 +546,66 @@ fn test_workspace_group_does_not_create_scheduling_dependency() {
 }
 
 #[test]
+fn sandbox_policy_is_preserved_in_task_dispatch_metadata() {
+    let engine = make_engine();
+    let mut def = WorkflowDef {
+        example_input: None,
+        id: "sandbox-workflow".to_string(),
+        description: String::new(),
+        sandbox: Some(crate::core::workflow::models::SandboxDef {
+            network: crate::core::workflow::models::SandboxNetworkPolicy {
+                allowed_hosts: vec!["api.example.com".to_string()],
+            },
+        }),
+        tasks: vec![task_def_with_workspace_group("task-a", "repo")],
+        data_bindings: vec![],
+    };
+    let instance = WorkflowInstance {
+        id: "sandbox-run".to_string(),
+        workflow_def_id: def.id.clone(),
+        version: 0,
+        status: WorkflowStatus::Running,
+        trigger_input: None,
+        pinned_worker_host: None,
+        tasks: HashMap::new(),
+        verifier_states: HashMap::new(),
+    };
+    let metadata = engine.execution_metadata(&instance, &def, &pending_task_instance("task-a"));
+    let dispatched = serde_json::to_value(&metadata).unwrap();
+    assert_eq!(
+        dispatched["sandbox"]["network"]["allowed_hosts"],
+        json!(["api.example.com"])
+    );
+    def.tasks[0].sandbox = Some(crate::core::workflow::models::SandboxDef {
+        network: crate::core::workflow::models::SandboxNetworkPolicy {
+            allowed_hosts: vec!["task.example.com".to_string()],
+        },
+    });
+    let overridden = engine.execution_metadata(&instance, &def, &pending_task_instance("task-a"));
+    assert_eq!(
+        serde_json::to_value(overridden).unwrap()["sandbox"]["network"]["allowed_hosts"],
+        json!(["task.example.com"])
+    );
+    def.tasks[0].sandbox = Some(crate::core::workflow::models::SandboxDef::default());
+    let denied = engine.execution_metadata(&instance, &def, &pending_task_instance("task-a"));
+    assert!(denied.sandbox.unwrap().network.allowed_hosts.is_empty());
+    def.sandbox = None;
+    let ordinary = engine.execution_metadata(&instance, &def, &pending_task_instance("task-a"));
+    assert!(
+        serde_json::to_value(ordinary)
+            .unwrap()
+            .get("sandbox")
+            .is_none()
+    );
+}
+
+#[test]
 fn test_root_task_uses_trigger_input_during_initial_materialization() {
     let mut task = task_def("task-a", json!({ "type": "object" }));
     task.input_schemas = vec![json!({ "type": "object" })];
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-root-input".to_string(),
         description: String::new(),
         tasks: vec![task.clone()],
@@ -579,6 +637,7 @@ fn test_workspace_group_tasks_still_wait_for_data_binding() {
     task_b.input_schemas = vec![json!({ "type": "object" })];
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-workspace-group-data-binding".to_string(),
         description: String::new(),
         tasks: vec![task_a.clone(), task_b.clone()],
@@ -648,6 +707,7 @@ async fn test_input_needed_workflow_retains_pinned_host() {
     let engine = make_engine_with_dispatcher(Arc::new(InputNeededDispatcher));
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-input-needed-pin-retention".to_string(),
         description: String::new(),
         tasks: vec![agent_task("ask-user", true)],
@@ -685,6 +745,7 @@ async fn test_input_needed_stops_current_engine_pass() {
     let engine = make_engine_with_dispatcher(dispatcher.clone());
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-input-needed-stops-pass".to_string(),
         description: String::new(),
         tasks: vec![
@@ -727,6 +788,7 @@ fn test_verifier_without_rerun_from_task_id_self_reruns_only() {
     let engine = make_engine();
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-self-rerun".to_string(),
         description: String::new(),
         tasks: vec![
@@ -748,6 +810,7 @@ fn test_verifier_with_rerun_from_task_id_reruns_upstream_slice() {
     let engine = make_engine();
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-upstream-rerun".to_string(),
         description: String::new(),
         tasks: vec![
@@ -783,6 +846,7 @@ fn test_loop_execution_metadata_includes_feedback_history() {
     let engine = make_engine();
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-loop-metadata".to_string(),
         description: String::new(),
         tasks: vec![
@@ -877,6 +941,7 @@ fn test_execution_metadata_includes_task_instance_generation_index() {
     let engine = make_engine();
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-generation-metadata".to_string(),
         description: String::new(),
         tasks: vec![task_def("task-a", json!({ "type": "object" }))],
@@ -918,6 +983,7 @@ async fn test_single_task_workflow_completes() {
 
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-1".to_string(),
         description: String::new(),
         tasks: vec![task_def("task-a", json!({ "type": "object" }))],
@@ -955,6 +1021,7 @@ async fn paused_workflow_records_in_flight_nonfinal_task_and_stops() {
     let engine = WorkflowEngine::new(storage.clone(), dispatcher.clone());
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-paused-nonfinal".to_string(),
         description: String::new(),
         tasks: vec![
@@ -1019,6 +1086,7 @@ async fn paused_workflow_records_in_flight_final_task_and_completes() {
     let engine = WorkflowEngine::new(storage.clone(), dispatcher.clone());
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-paused-final".to_string(),
         description: String::new(),
         tasks: vec![task_def("task-a", json!({ "type": "object" }))],
@@ -1074,12 +1142,14 @@ async fn test_fan_in_workflow_completes_with_propagation() {
 
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-2".to_string(),
         description: String::new(),
         tasks: vec![
             task_def("task-a", json!({ "type": "object" })),
             task_def("task-b", json!({ "type": "object" })),
             TaskDef {
+                sandbox: None,
                 id: "task-c".to_string(),
                 kind: TaskTypeDef::ApiCall {
                     url: "http://example.com".to_string(),
@@ -1153,6 +1223,7 @@ async fn test_verifier_continue_marks_rejected_slice_unsatisfied() {
     let engine = make_engine_with_dispatcher(Arc::new(ContinueThenCompleteDispatcher));
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-loop-satisfaction".to_string(),
         description: String::new(),
         tasks: vec![
@@ -1247,6 +1318,7 @@ async fn test_verifier_rerun_dispatches_same_logical_agent_identity() {
     let engine = make_engine_with_dispatcher(dispatcher.clone());
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-agent-session-identity".to_string(),
         description: String::new(),
         tasks: vec![
@@ -1308,6 +1380,7 @@ async fn test_human_input_continuation_dispatches_same_logical_agent_identity() 
     let engine = make_engine_with_dispatcher(dispatcher.clone());
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-human-input-continuation".to_string(),
         description: String::new(),
         tasks: vec![agent_task("task-a", true)],
@@ -1417,6 +1490,7 @@ fn test_verifier_slice_uses_latest_materialized_completed_source_attempt() {
     let verifier_task = agent_verifier_task("verify", Some("task-b"));
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-verifier-latest-completed-source".to_string(),
         description: String::new(),
         tasks: vec![
@@ -1529,6 +1603,7 @@ fn test_verifier_slice_waits_for_latest_materialized_source_attempt() {
     let verifier_task = agent_verifier_task("verify", Some("task-b"));
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-verifier-waits-current-source".to_string(),
         description: String::new(),
         tasks: vec![
@@ -1626,6 +1701,7 @@ async fn test_verifier_complete_accepts_first_generation() {
     let engine = make_engine_with_dispatcher(Arc::new(CompleteVerifierDispatcher));
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-first-generation-accepted".to_string(),
         description: String::new(),
         tasks: vec![
@@ -1692,6 +1768,7 @@ async fn test_function_verifier_can_drive_bounded_rerun() {
     let engine = make_engine_with_dispatcher(Arc::new(ContinueThenCompleteDispatcher));
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-function-verifier".to_string(),
         description: String::new(),
         tasks: vec![
@@ -1739,6 +1816,7 @@ async fn test_exhausted_verifier_fails_when_continue_policy_is_false() {
     let engine = make_engine_with_dispatcher(Arc::new(AlwaysContinueVerifierDispatcher));
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-exhaustion-fail".to_string(),
         description: String::new(),
         tasks: vec![
@@ -1792,6 +1870,7 @@ async fn test_exhausted_verifier_accepts_latest_generation_when_continue_policy_
     let engine = make_engine_with_dispatcher(Arc::new(AlwaysContinueVerifierDispatcher));
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-exhaustion-accept".to_string(),
         description: String::new(),
         tasks: vec![
@@ -1849,6 +1928,7 @@ fn test_exhausted_continue_fails_without_schema_valid_latest_output() {
     verifier_task.output_schema = None;
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-exhaustion-no-valid-output".to_string(),
         description: String::new(),
         tasks: vec![
@@ -1951,6 +2031,7 @@ async fn test_downstream_uses_latest_satisfied_generation_after_verifier() {
     task_c.input_schemas = vec![json!({ "type": "object" }), json!({ "type": "object" })];
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-downstream-latest-satisfied".to_string(),
         description: String::new(),
         tasks: vec![
@@ -2026,6 +2107,7 @@ async fn test_schema_validation_failure_marks_workflow_failed() {
 
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-3".to_string(),
         description: String::new(),
         tasks: vec![task_def("task-strict", strict_schema)],
@@ -2062,10 +2144,12 @@ async fn api_call_complete_response_satisfies_schema_and_propagates_downstream()
     let engine = make_engine_with_dispatcher(dispatcher.clone());
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "api-response-valid".to_string(),
         description: String::new(),
         tasks: vec![
             TaskDef {
+                sandbox: None,
                 id: "fetch-data".to_string(),
                 kind: TaskTypeDef::ApiCall {
                     url: "http://example.com/items".to_string(),
@@ -2130,10 +2214,12 @@ async fn api_call_complete_response_that_violates_schema_is_not_propagated() {
     let engine = make_engine_with_dispatcher(dispatcher.clone());
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "api-response-invalid".to_string(),
         description: String::new(),
         tasks: vec![
             TaskDef {
+                sandbox: None,
                 id: "fetch-data".to_string(),
                 kind: TaskTypeDef::ApiCall {
                     url: "http://example.com/items".to_string(),
@@ -2205,6 +2291,7 @@ async fn test_input_schema_failure_marks_workflow_failed() {
     downstream.input_schemas = vec![json!({ "type": "string" })];
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-input-schema".to_string(),
         description: String::new(),
         tasks: vec![task_def("task-a", json!({ "type": "object" })), downstream],
@@ -2247,6 +2334,7 @@ async fn test_get_workflow_status_after_completion() {
 
     let def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: "def-status".to_string(),
         description: String::new(),
         tasks: vec![
@@ -2361,6 +2449,7 @@ async fn agent_feedback_is_preserved_without_affecting_execution_and_coexists_wi
             let id = setup(
                 &engine,
                 WorkflowDef {
+                    sandbox: None,
                     id: "feedback".into(),
                     description: String::new(),
                     example_input: None,
@@ -2469,6 +2558,7 @@ async fn run_exit_case_with_permission(
     let id = setup(
         &engine,
         WorkflowDef {
+            sandbox: None,
             example_input: None,
             id: "exit-test".into(),
             description: String::new(),
@@ -2610,6 +2700,7 @@ async fn early_exit_retains_prior_outputs_and_running_attempts_and_waits_for_the
         verifier: None,
     });
     let def = WorkflowDef {
+        sandbox: None,
         example_input: None,
         id: "running-exit".into(),
         description: String::new(),
@@ -2748,6 +2839,7 @@ async fn skipped_verifier_slices_complete_without_acceptance_or_new_generations(
             });
         }
         let def = WorkflowDef {
+            sandbox: None,
             example_input: None,
             id: "skip-loop".into(),
             description: String::new(),
@@ -2792,6 +2884,7 @@ async fn verifier_can_trigger_exit_without_retrying_or_exhaustion_failure() {
     let id = setup(
         &engine,
         WorkflowDef {
+            sandbox: None,
             example_input: None,
             id: "verifier-exit".into(),
             description: String::new(),
@@ -2831,6 +2924,7 @@ async fn independent_verifier_continues_with_skipped_consumer_after_exit() {
     for has_consumer in [true, false] {
         let engine = make_engine_with_dispatcher(Arc::new(ContinueThenCompleteDispatcher));
         let def = WorkflowDef {
+            sandbox: None,
             example_input: None,
             id: "continue-after-exit".into(),
             description: String::new(),

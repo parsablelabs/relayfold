@@ -51,6 +51,7 @@ async fn persists_and_reconstructs_workflow_state() {
 
     let mut workflow_def = WorkflowDef {
         example_input: None,
+        sandbox: None,
         id: workflow_def_id.clone(),
         description: "MySQL contract test".to_string(),
         tasks: vec![],
