@@ -1,5 +1,5 @@
 import type { TaskExecutor, JsonValue, TaskExecutionResult } from '../../core/ports/TaskExecutor.js';
-import type { TaskExecutionPayload } from '../../core/models/TaskDef.js';
+import type { SandboxDef, TaskExecutionPayload } from '../../core/models/TaskDef.js';
 import type { CredentialsPort } from '../../core/ports/CredentialsPort.js';
 import { getModel } from '@earendil-works/pi-ai';
 import { Agent } from '@earendil-works/pi-agent-core';
@@ -164,6 +164,7 @@ export function buildAgentPromptParts(args: {
     approvedTools: PromptTool[];
     approvedSkills: Skill[];
     canLoadSkills: boolean;
+    sandbox?: SandboxDef | undefined;
 }): AgentPromptParts {
     let systemContext = "";
     let freshContext = "";
@@ -244,6 +245,23 @@ export function buildAgentPromptParts(args: {
             NOTE: You are allowed and encouraged to use approved tools to gather information FIRST before producing the final response.
             DO NOT ask for permission before using your approved tools. Execute them right away and use the results to answer the user.
             `;
+    if (args.sandbox) {
+        const allowedHosts = args.sandbox.network?.allowed_hosts ?? [];
+        systemContext += `
+            \n\nSANDBOX ENVIRONMENT:
+            Your shell and file tools operate inside an isolated Linux VM.
+            Worker-host programs and files are unavailable unless explicitly mounted.
+            Use the workspace path supplied for this attempt; its files persist according to the workflow's workspace sharing rules.
+            Approved skill directories are mounted read-only.
+            Each task attempt starts in a fresh VM, including retries and continuations after a pause for human input.
+            Installed packages, running processes, and files outside mounted directories are discarded between attempts.
+            Conversation history may describe tools or dependencies installed in a previous VM. Verify their availability in this attempt and reinstall missing dependencies when needed and permitted by the network policy.
+            ${allowedHosts.length > 0
+                ? `Outbound task HTTP/HTTPS is restricted to these allowed host patterns: ${JSON.stringify(allowedHosts)}. Private and loopback destinations remain blocked.`
+                : 'Outbound task network access is denied.'}
+            Arbitrary TCP, SSH, and WebSocket access are not enabled.`;
+    }
+
     if (args.allowEarlyExit === true) {
         systemContext += `
             \n\n
@@ -465,6 +483,7 @@ export class AgentExecutor implements TaskExecutor {
             approvedTools,
             approvedSkills,
             canLoadSkills,
+            sandbox: sandbox ? payload.execution_metadata?.sandbox : undefined,
         });
 
         // Rebuild the system instructions for every attempt, including restored sessions.

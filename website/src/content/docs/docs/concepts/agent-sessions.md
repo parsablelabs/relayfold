@@ -64,6 +64,14 @@ For a continuation attempt with an existing session, the worker appends only the
 
 The previous prompt, tool results, and assistant turns are expected to already exist in the loaded session.
 
+For sandboxed tasks, conversation reuse does not restore the VM. Each attempt,
+including a retry or continuation after human input, starts in a fresh guest.
+Installed packages, running processes, and files outside mounted directories are
+discarded; workspace files retain their configured sharing behavior. The Agent's
+system instructions explain this distinction and the current network policy on
+every attempt, so the Agent can check and reinstall dependencies mentioned in
+earlier conversation history when network access permits.
+
 If a reusable session cannot be loaded, the worker creates a fresh session and rebuilds enough context from structured workflow data: task prompt, upstream inputs, previous output, feedback history when available, and the current human response or verifier feedback.
 
 ## Worker-local storage
