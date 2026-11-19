@@ -1,16 +1,22 @@
 # Shared example Functions
 
-Reusable Functions used by multiple example workflows.
+`github.apply_labels` completes the issue-to-PR workflow's label lifecycle.
+It receives fetched issue data, the PR publication result, and a successful issue
+summary (`commented: true`). Repository, issue, and PR identifiers must match.
 
-`github.apply_labels` is shared by the issue-to-PR and CloudWatch workflows. In the PR workflow it receives fetched issue data, the PR result, and implementation output. It adds `relayfold:pr-created` when `pr_created` is true and `pr_number` is valid; unresolved `open_questions` add `relayfold:human-input-needed`. Repository and issue identifiers must match.
+For a new or reused PR it ensures `relayfold:pr-created` exists and adds it without
+replacing other issue labels. This label is informational. After that succeeds,
+it removes `relayfold:agent-ready`, preventing further processing until a developer
+reapplies it. Successful no-work runs remove readiness without adding a PR marker.
+Missing summary evidence or marker failures cause no readiness removal; removal
+failures fail the task. Repeated removal confirms that readiness is absent.
 
-In the CloudWatch workflow it receives the publisher's `created` entries, each with `repository`, `issue_number`, and `human_input_needed`. It adds the human-input label only to flagged new issues. Empty publication results, dry runs, and requests needing neither label make no GitHub calls.
-
-The Function creates missing repository labels, adds labels without replacing existing ones, and confirms the response. Output is `{ applied: [{ repository, issue_number, labels }] }`. It requires `gh_token` with permission to create and apply labels.
-
-For human-input issues, add the missing information in an issue comment and remove `relayfold:human-input-needed`. Fetching then includes that comment for implementation and review.
-
-The marker remains until manually removed. It prevents later pickups, but does not lock concurrent runs or detect unmarked existing PRs. If marking fails after PR creation, apply the label before retrying the full workflow. The final issue-comment task waits for this Function to succeed.
+Output is `{ applied: [{ repository, issue_number, labels }], removed:
+[{ repository, issue_number, labels }] }`. It requires `gh_token` with permission
+to create, apply, and remove labels. Human clarification uses the workflow's
+`ask_user` flow; this Function does not manage `relayfold:human-input-needed`.
+The CloudWatch workflow publishes its origin and optional bug labels directly and
+no longer calls this Function.
 
 Requires Node.js 24 or newer; no npm dependencies are needed. From this directory:
 
@@ -18,10 +24,11 @@ Requires Node.js 24 or newer; no npm dependencies are needed. From this director
 npm test
 ```
 
-Tests use injected GitHub responses and build the issue-to-PR fetch artifact for the integration checks. They never contact GitHub.
-Generated JSON and YAML artifacts in `dist/` are ignored by Git.
+Tests use injected GitHub responses and build the issue-to-PR fetch artifact for
+integration checks. They never contact GitHub. Generated artifacts in `dist/`
+are ignored by Git.
 
-Register the shared Function before executing either workflow:
+Register the Function before executing the issue-to-PR workflow:
 
 ```bash
 export RELAYFOLD_URL=http://localhost:3000

@@ -1045,6 +1045,7 @@ mod tests {
         let mut def = workflow_def_with_task("workflow", "task");
         def.tasks[0].kind = TaskTypeDef::Agent {
             model_id: "test/model".into(),
+            thinking_level: None,
             provider_url: "".into(),
             prompt: "work".into(),
             tools: vec![],
@@ -1274,6 +1275,7 @@ mod tests {
             id: task_id.to_string(),
             kind: TaskTypeDef::Agent {
                 model_id: "test/model".to_string(),
+                thinking_level: None,
                 provider_url: "".to_string(),
                 prompt: "continue".to_string(),
                 tools: vec![],

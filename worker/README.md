@@ -16,7 +16,7 @@ documentation, see:
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 22.19.0+ (worker Docker images use Node.js 24)
 - npm
 - Docker, if building the worker image
 

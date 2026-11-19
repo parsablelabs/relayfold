@@ -4,6 +4,9 @@
   "description": "Docker container worker for executing agentic tasks",
   "license": "Apache-2.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -13,9 +16,9 @@
     "test": "npm run build && node --test test/*.test.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.74.0",
-    "@earendil-works/pi-ai": "^0.74.0",
-    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-agent-core": "0.99.1",
+    "@earendil-works/pi-ai": "0.99.1",
+    "@earendil-works/pi-coding-agent": "0.99.1",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "pino": "^10.3.1",

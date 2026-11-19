@@ -2,7 +2,7 @@ import { access, readdir, readFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import {
-    AuthStorage,
+    ModelRuntime,
     DefaultResourceLoader,
     ExtensionRunner,
     loadSkillsFromDir,
@@ -12,6 +12,7 @@ import {
     SettingsManager,
     wrapRegisteredTools,
 } from '@earendil-works/pi-coding-agent';
+import { InMemoryCredentialStore } from '@earendil-works/pi-ai';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { logger } from '../../../utils/logger.js';
 
@@ -74,7 +75,9 @@ export class PiResourceToolProvider {
             extensionsResult.runtime,
             cwd,
             SessionManager.inMemory(cwd),
-            ModelRegistry.inMemory(AuthStorage.inMemory())
+            new ModelRegistry(await ModelRuntime.create({
+                credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false,
+            }))
         );
         runner.bindCore(
             {
@@ -89,12 +92,15 @@ export class PiResourceToolProvider {
                 setActiveTools: () => undefined,
                 refreshTools: () => undefined,
                 getCommands: () => [],
+                getSettings: () => settingsManager.getSettings(),
                 setModel: async () => false,
                 getThinkingLevel: () => 'off',
                 setThinkingLevel: () => undefined,
             },
             {
                 getModel: () => undefined,
+                getScopedModels: () => [],
+                isProjectTrusted: () => false,
                 isIdle: () => true,
                 getSignal: () => undefined,
                 abort: () => undefined,

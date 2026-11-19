@@ -33,9 +33,30 @@ tasks:
       - gemini_api_key
 ```
 
+## Reasoning level
+
+Set optional `thinking_level` on an Agent to control its reasoning effort:
+
+```yaml
+kind:
+  agent:
+    model_id: "openai-codex/gpt-6.1-sol"
+    thinking_level: high
+    # Include the other required Agent fields as usual.
+```
+
+Accepted values are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
+Pi adjusts the requested level to the selected model's supported levels. Models
+without reasoning support use `off`.
+
+An explicit task value overrides Pi settings and the level saved in a reused
+session. When omitted, Pi preserves its existing behavior: reuse the session's
+level, otherwise use model-specific or global Pi settings, falling back to
+`medium` before adjusting for model support.
+
 ## Prompt and inputs
 
-The agent prompt defines the task objective. Inputs from workflow triggers and upstream data bindings are provided to the task execution context so the agent can reason over earlier outputs.
+The agent prompt defines the task objective. Inputs from workflow triggers and upstream data bindings are provided to the task execution context so the agent can reason over earlier outputs. Task instructions are refreshed on every attempt, including when an existing session is restored. Session reuse preserves conversation history while applying the current task settings, including `thinking_level`.
 
 Use schemas when downstream tasks depend on specific fields. A schema makes the contract explicit and gives RelayFold a clear validation boundary before the workflow continues.
 
@@ -65,9 +86,11 @@ uppercase environment variable for the complete Agent execution. No entry has
 special positional meaning.
 
 Use provider-standard names for model API keys, such as `gemini_api_key` for a
-`google/...` model or `openai_api_key` for an `openai/...` model. RelayFold
-currently supports Agent model authentication through these API-key
-environment variables rather than persistent Pi or OAuth authentication.
+`google/...` model or `openai_api_key` for an `openai/...` model. API-key models use these environment variables. For Codex subscription models,
+use `openai-codex/<model-id>` after signing in on the orchestrator with
+`orchestrator login openai-codex`. The worker obtains access credentials from the
+orchestrator before each model request; OAuth tokens are not entries in
+`required_credentials`.
 
 See [Task Credentials](/relayfold/docs/operations/credentials/) for provider mappings.
 Required credentials are also available to approved Agent tools, so grant both

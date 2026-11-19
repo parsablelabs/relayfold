@@ -57,4 +57,4 @@ mkdir -p -- "$(dirname -- "$RELAYFOLD_STORE_SQLITE_PATH")"
 export RELAYFOLD_USE_GLOBAL_NAMESPACE=true
 export RUST_LOG="${RUST_LOG:-info}"
 
-exec "$binary"
+exec "$binary" start

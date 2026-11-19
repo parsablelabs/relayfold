@@ -11,14 +11,17 @@ example_input:
 # Omit issue_number to select the oldest eligible open relayfold issue.
 # Optional issue_number selects a specific issue; pr_number requires issue_number.
 # Optional pr_number identifies an existing PR in the same repository.
-# The requested issue must have the relayfold label; otherwise fetching fails.
-# Issues labeled relayfold:pr-created or relayfold:human-input-needed also fail fetching.
+# The requested issue must have relayfold:agent-ready; otherwise the workflow exits.
+# Existing PRs are resolved from issue summaries or optional pr_number.
+# Success posts a marked summary, then removes agent-ready; clarification uses ask_user.
 #
 # The fetch Function and tasks that run gh list gh_token in required_credentials. The worker exposes
 # required credentials as uppercased environment variables during task execution.
 
 tasks:
   - id: fetch-issue-and-pr
+    control:
+      allow_early_exit: true
     timeout_secs: 300
     kind:
       function:
@@ -41,14 +44,11 @@ tasks:
             minimum: 1
     output_schema:
       type: object
-      required:
-        - repository
-        - issue_number
-        - issue_url
-        - title
-        - body
-        - state
-        - comments
+      required: [repository]
+      if:
+        required: [issue_number]
+      then:
+        required: [issue_number, issue_url, title, body, state, comments]
       properties:
         repository:
           type: string
@@ -109,7 +109,8 @@ tasks:
     allow_agent_feedback: true
     kind:
       agent:
-        model_id: "google/gemini-3.1-pro-preview"
+        model_id: "openai-codex/gpt-6.1-sol"
+        thinking_level: medium
         provider_url: ""
         prompt: |
           Implement the GitHub issue described in the upstream task data.
@@ -131,22 +132,16 @@ tasks:
           - make the minimum reasonable code and documentation changes needed
           - run focused tests or checks that are relevant to the change
           - if the issue is unclear or a critical implementation decision is underspecified, call ask_user with a specific question
-          - open_questions must list any unresolved human decisions or missing information; use [] when none remain
+          - on verifier retries, read the feedback before editing; when it identifies unsupported assumptions that require human decisions, call ask_user with the specific clarification questions from the feedback before revising the affected implementation
+          - use the human answers to resolve those decisions; do not replace rejected assumptions with new guesses, and preserve earlier clarifications and accepted corrections
+          - resolve missing information through ask_user before returning; open_questions must be [] on completion
           - do not create a pull request in this task
 
-          Return exactly this JSON shape:
-          {
-            "repository": "owner/name",
-            "issue_number": 123,
-            "summary": "what changed",
-            "files_changed": ["relative/path"],
-            "tests_run": ["command and result"],
-            "open_questions": []
-          }
         tools: ["read", "write", "edit", "bash"]
         skills: []
         ask: true
         schema_failure_retry_times: 2
+        timeout_secs: 500
         reuse_session: true
     output_schema:
       type: object
@@ -186,7 +181,8 @@ tasks:
     allow_agent_feedback: true
     kind:
       agent:
-        model_id: "google/gemini-3.1-pro-preview"
+        model_id: "openai-codex/gpt-6.1-sol"
+        thinking_level: medium
         provider_url: ""
         prompt: |
           Review the implementation against the upstream issue acceptance criteria and optional change_request.
@@ -198,6 +194,8 @@ tasks:
           - inspect the full diff, working tree, and relevant surrounding code
           - verify each acceptance criterion against the implementation
           - check for correctness problems, regressions, and unnecessary scope
+          - check whether critical implementation decisions are supported by the issue, PR feedback, or human clarifications; reject unsupported assumptions that materially affect the requested behavior or scope
+          - when rejecting such assumptions, return decision "continue" with feedback identifying each assumption, the affected files and behavior, why the available requirements do not resolve it, and specific questions for implement-change to ask the human through ask_user before revising the implementation; do not prescribe an unconfirmed decision as the fix
           - verify required documentation updates are included
           - run relevant tests and required checks when practical; otherwise inspect
             available results and explain what could not be verified
@@ -213,6 +211,7 @@ tasks:
         skills: []
         ask: false
         schema_failure_retry_times: 2
+        timeout_secs: 500
         reuse_session: false
     control:
       verifier:
@@ -228,7 +227,8 @@ tasks:
     allow_agent_feedback: true
     kind:
       agent:
-        model_id: "google/gemini-3-flash-preview"
+        model_id: "openai-codex/gpt-6.1-sol"
+        thinking_level: low
         provider_url: ""
         prompt: |
           Create a GitHub pull request for the completed implementation when there are changes to publish.
@@ -246,19 +246,10 @@ tasks:
           - if there are no changes to commit, do not create a PR; still return an existing PR when supplied
           - if no existing PR was supplied and no PR is created because the requested change is already in place, set pr_created to false, omit pr_number and pr_url, and explain that in summary
 
-          Return exactly this JSON shape:
-          {
-            "repository": "owner/name",
-            "issue_number": 123,
-            "pr_created": true,
-            "branch": "branch-name",
-            "pr_number": 123,
-            "pr_url": "https://github.com/owner/name/pull/123",
-            "summary": "PR summary, or why no PR was needed"
-          }
         tools: ["bash"]
         skills: []
         ask: false
+        timeout_secs: 120
         schema_failure_retry_times: 2
     output_schema:
       type: object
@@ -289,7 +280,7 @@ tasks:
       - gh_token
 
   - id: apply-labels
-    timeout_secs: 120
+    timeout_secs: 30
     kind:
       function:
         ref: github.apply_labels
@@ -297,7 +288,22 @@ tasks:
       type: object
       required:
         - applied
+        - removed
       properties:
+        removed:
+          type: array
+          items:
+            type: object
+            required: [repository, issue_number, labels]
+            properties:
+              repository:
+                type: string
+              issue_number:
+                type: integer
+              labels:
+                type: array
+                items:
+                  type: string
         applied:
           type: array
           items:
@@ -316,37 +322,10 @@ tasks:
       - gh_token
 
   - id: update-github-issue
-    allow_agent_feedback: true
+    timeout_secs: 120
     kind:
-      agent:
-        model_id: "google/gemini-3-flash-preview"
-        provider_url: ""
-        prompt: |
-          Add a short final status comment to the GitHub issue.
-
-          Requirements:
-          - use the upstream fetch-issue-and-pr data to identify the repository and issue number
-          - use the upstream create-pull-request data to determine whether a PR was created
-          - always add exactly one concise issue comment with gh issue comment
-          - if a PR was created, include the PR number and URL in the comment
-          - if no PR was created because no work was needed or the change was already in place, say that clearly
-          - if an existing PR was reused, include its number and URL and describe whether it was updated
-          - omit pr_number and pr_url only when no PR exists
-          - do not close the issue, reopen the issue, change labels, or otherwise mutate the issue beyond adding the comment
-
-          Return exactly this JSON shape:
-          {
-            "repository": "owner/name",
-            "issue_number": 123,
-            "commented": true,
-            "comment_summary": "short summary of the issue comment",
-            "pr_number": 123,
-            "pr_url": "https://github.com/owner/name/pull/123"
-          }
-        tools: ["bash"]
-        skills: []
-        ask: false
-        schema_failure_retry_times: 2
+      function:
+        ref: github-issue-to-pr.update_issue
     output_schema:
       type: object
       required:
@@ -367,10 +346,7 @@ tasks:
           type: integer
         pr_url:
           type: string
-    workspace:
-      group_name: repo
     required_credentials:
-      - gemini_api_key
       - gh_token
 
 data_bindings:
@@ -379,8 +355,8 @@ data_bindings:
   - source_task_id: create-pull-request
     target_task_id: [update-github-issue, apply-labels]
   - source_task_id: implement-change
-    target_task_id: [review-implementation, create-pull-request, apply-labels]
+    target_task_id: [review-implementation, create-pull-request, update-github-issue, apply-labels]
   - source_task_id: review-implementation
     target_task_id: create-pull-request
-  - source_task_id: apply-labels
-    target_task_id: update-github-issue
+  - source_task_id: update-github-issue
+    target_task_id: apply-labels

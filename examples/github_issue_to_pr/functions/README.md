@@ -3,11 +3,12 @@
 `github-issue-to-pr.fetch_issue_and_pr` fetches one issue using the GitHub REST API,
 without an LLM or GitHub CLI. It requires `gh_token` and input
 `{ "repository": "owner/repo" }`. Without `issue_number`, it fetches all pages of
-open issues labeled `relayfold`, skips pull requests and issues labeled
-`relayfold:pr-created` or `relayfold:human-input-needed`, and selects the oldest
-eligible issue by creation time. It fetches the selected issue again to recheck
-its state and labels before loading comments. No eligible issue, incomplete
-pagination, or GitHub errors fail the fetch step before implementation.
+open issues labeled `relayfold:agent-ready`, skips pull requests, and selects
+the oldest eligible issue by creation time. It fetches the selected issue again to recheck
+its state and labels before loading comments. If no eligible issue exists, it
+returns `repository` and `_workflow_exit_reason` for successful early completion,
+without fetching issue details or comments. Incomplete pagination and GitHub
+errors still fail the fetch step before implementation.
 
 Supply `issue_number` to select a specific issue instead, for example
 `{ "repository": "owner/repo", "issue_number": 7 }`. Explicit selection still
@@ -15,17 +16,59 @@ accepts open or closed issues. `pr_number` requires an explicit `issue_number`.
 Selection does not claim or lock an issue; avoid concurrent runs for the same
 repository when using automatic selection.
 
-The issue must have the exact `relayfold` label. Missing labels, pull requests,
-GitHub errors, or incomplete comment pagination fail the task before implementation.
-Issues labeled `relayfold:pr-created` or `relayfold:human-input-needed` also fail before comment fetching and implementation.
-The labels are checked regardless of whether the issue is open or closed.
+The issue must have the exact `relayfold:agent-ready` label. Without it, the
+Function returns `_workflow_exit_reason` with the issue metadata and an empty
+`comments` array, without fetching comments. The workflow enables
+`control.allow_early_exit: true` on the fetch task to complete before implementation;
+RelayFold adds the reserved reason field to the effective output schema.
+Pull request numbers, GitHub errors, or incomplete pagination fail the task.
+Explicit selection accepts open and closed issues. Neither `relayfold` nor
+`relayfold:human-input-needed` is required or checked; clarification uses `ask_user`
+inside the implementation workflow. `relayfold:pr-created` is informational.
 
-Output contains `repository`, `issue_number`, `issue_url`, `title`, uppercase
-`state`, `body`, and `comments` (an array of comment bodies). The implementation
-and review Agents interpret acceptance criteria from the original body and comments.
-No generated summary or extracted acceptance-criteria field is needed.
+Successful fetch output contains `repository`, `issue_number`, `issue_url`,
+`title`, uppercase `state`, `body`, and `comments` (all issue comment bodies).
+Implementation and review interpret the issue's acceptance criteria.
 
-The shared `github.apply_labels` Function lives in [`examples/functions`](../../functions/README.md). Build and register it separately before executing the workflow.
+## Continue an existing pull request
+
+The Function resolves a PR from its same-repository URL in the latest issue
+summary marked `<!-- relayfold:issue-to-pr -->`. Older issues can use an
+unambiguous PR link in their comments or an explicit input:
+`{ "repository": "owner/repo", "issue_number": 7, "pr_number": 12 }`.
+Multiple candidate links, or a `relayfold:pr-created` issue without a link,
+fail with instructions to supply `pr_number`; no replacement PR is created.
+PRs without a summary link must be supplied explicitly.
+
+The optional `pr` object contains `pr_number`, `pr_url`, `title`, `body`, uppercase
+`state`, `branch`, and all pages of conversation `comments`, inline
+`review_comments`, and `reviews`. The separate `change_request` object contains
+`body` and `url` from the latest nonempty developer feedback across PR conversation
+comments, inline review comments, and submitted reviews. Selection uses comment
+creation times and review submission times. Bot comments, pending reviews, and
+marked RelayFold summaries are excluded. A PR without developer feedback fails
+fetching; post the request before starting the run.
+
+Implementation checks out the existing PR branch and focuses on `change_request`,
+preserving existing work and using older discussion as context. Missing information
+or a closed/merged PR that prevents continuation is resolved through `ask_user`.
+Publication pushes to the same PR and returns `pr_created: false` for reuse.
+
+## Summary and readiness
+
+`github-issue-to-pr.update_issue` receives fetched issue, implementation, and
+publication outputs. It posts one issue comment headed **RelayFold — PR created**,
+**RelayFold — PR updated**, or **RelayFold — No PR needed**, with the stable marker,
+change summary, checks, PR link, and request link when available. It rejects
+unresolved `open_questions` and inconsistent identifiers before posting.
+
+The shared `github.apply_labels` Function in
+[`examples/functions`](../../functions/README.md) runs only after summary success.
+It retains/adds `relayfold:pr-created` for a new or reused PR, then removes
+`relayfold:agent-ready`. Successful no-work runs also consume readiness. Failures
+before completion leave readiness present. To request another update, post a new
+PR comment or submitted review, then reapply `relayfold:agent-ready` to the issue and
+start the workflow. Avoid overlapping runs for the same issue; labels are not locks.
 
 ## Build and register
 
@@ -36,39 +79,20 @@ npm test
 ```
 
 Tests use injected HTTP responses and never contact GitHub. Generated JSON and YAML
-artifacts in `dist/` are ignored by Git. Register the fetch Function before the workflow:
+artifacts in `dist/` are ignored by Git. Register both Functions and the shared
+label Function before registering the updated workflow:
 
 ```bash
 export RELAYFOLD_URL=http://localhost:3000
 curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
   --data-binary @dist/github-issue-to-pr.fetch_issue_and_pr.json
+curl -fsS -X POST "$RELAYFOLD_URL/function-def" \
+  --data-binary @dist/github-issue-to-pr.update_issue.json
 ```
 
-### Continue an existing pull request
+Previously labeled issues need `relayfold:agent-ready` to run. Legacy
+`relayfold:human-input-needed` labels can be removed manually; they have no effect
+on this workflow.
 
-Add optional `pr_number` to the input, for example
-`{ "repository": "owner/repo", "issue_number": 7, "pr_number": 12 }`.
-The PR must belong to the input repository. The fetch Function includes an optional
-`pr` object with `pr_number`, `pr_url`, `title`, `body`, uppercase `state`,
-`branch`, and all pages of `comments` (conversation bodies), `review_comments`
-(inline review bodies), and `reviews` (review summary bodies). GitHub errors or
-incomplete pagination fail the task rather than passing partial context.
-See GitHub's [review comments API](https://docs.github.com/en/rest/pulls/comments)
-and [issue comments API](https://docs.github.com/en/rest/issues/comments).
-
-The separate `change_request` object contains the body and URL of the latest
-nonempty developer feedback from PR discussion, inline comments, or submitted
-reviews. Selection uses comment creation times and review submission times.
-Bot comments, pending reviews, and marked RelayFold summaries are excluded.
-Fetching fails if no eligible feedback exists; add the requested changes to the
-PR before rerunning.
-
-Implementation checks out the supplied PR and focuses on `change_request`, using
-older discussion as context and preserving work already completed. If the feedback
-has no actionable request, implementation asks for clarification through `ask_user`.
-Review receives the same context, and publication pushes to the existing
-branch without creating a duplicate PR. The final issue comment links to the reused
-PR. `pr_created` remains false for a reused PR, so reuse does not add the
-`relayfold:pr-created` label. Existing issue-label guards still apply: remove a
-blocking label deliberately before rerunning. Closed or merged PR details can be
-fetched; the Agents must inspect their state before deciding how to proceed.
+If PR publication succeeds but summary posting fails, supply that PR’s `pr_number`
+when starting another run so it continues the published branch.

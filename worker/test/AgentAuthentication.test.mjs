@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AuthStorage } from '@earendil-works/pi-coding-agent';
+import { ModelRuntime } from '@earendil-works/pi-coding-agent';
+import { InMemoryCredentialStore } from '@earendil-works/pi-ai';
+
 import {
     resolveCredentialEnvironment,
     withTaskEnvironment,
 } from '../dist/core/TaskEnvironment.js';
+
+async function createRuntime() {
+    return ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false });
+}
 
 test('provider credentials are available for the complete wrapped Agent execution scope', async () => {
     const previousGhToken = process.env.GH_TOKEN;
@@ -22,11 +28,11 @@ test('provider credentials are available for the complete wrapped Agent executio
         OPENAI_API_KEY: 'openai-secret',
     });
 
-    const authStorage = AuthStorage.inMemory();
+    const runtime = await createRuntime();
     await withTaskEnvironment(env, async () => {
         assert.equal(process.env.GH_TOKEN, 'github-secret');
         assert.equal(
-            await authStorage.getApiKey('openai'),
+            (await runtime.getAuth('openai'))?.auth.apiKey,
             'openai-secret'
         );
     });
@@ -36,7 +42,7 @@ test('provider credentials are available for the complete wrapped Agent executio
 });
 
 test('Pi resolves provider-standard Gemini and Anthropic environment variables', async () => {
-    const authStorage = AuthStorage.inMemory();
+    const runtime = await createRuntime();
     await withTaskEnvironment(
         {
             GEMINI_API_KEY: 'gemini-secret',
@@ -44,11 +50,11 @@ test('Pi resolves provider-standard Gemini and Anthropic environment variables',
         },
         async () => {
             assert.equal(
-                await authStorage.getApiKey('google'),
+                (await runtime.getAuth('google'))?.auth.apiKey,
                 'gemini-secret'
             );
             assert.equal(
-                await authStorage.getApiKey('anthropic'),
+                (await runtime.getAuth('anthropic'))?.auth.apiKey,
                 'anthropic-secret'
             );
         }
@@ -65,12 +71,12 @@ test('first required credential has no special model-authentication behavior', a
     );
 
     await withTaskEnvironment(env, async () => {
-        const authStorage = AuthStorage.inMemory();
+        const runtime = await createRuntime();
         assert.equal(
-            await authStorage.getApiKey('openai'),
+            (await runtime.getAuth('openai'))?.auth.apiKey,
             'provider-key'
         );
-        assert.equal(authStorage.getAuthStatus('gh').configured, false);
+        assert.equal(Boolean(await runtime.checkAuth('gh')), false);
     });
 });
 
@@ -88,11 +94,9 @@ test('Pi resolves no model credential when no normal authentication source is co
     const previous = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;
     try {
-        const authStorage = AuthStorage.inMemory();
-        assert.equal(await authStorage.getApiKey('openai'), undefined);
-        assert.deepEqual(authStorage.getAuthStatus('openai'), {
-            configured: false,
-        });
+        const runtime = await createRuntime();
+        assert.equal((await runtime.getAuth('openai'))?.auth.apiKey, undefined);
+        assert.equal(await runtime.checkAuth('openai'), undefined);
     } finally {
         if (previous === undefined) {
             delete process.env.OPENAI_API_KEY;

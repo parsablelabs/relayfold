@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ COPY src ./src
 RUN npm run build
 
 # Stage 2: Create the production image
-FROM node:20-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 ARG RELAYFOLD_PI_PACKAGES=""

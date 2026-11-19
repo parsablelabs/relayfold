@@ -619,6 +619,7 @@ mod tests {
                         id: "task-a".to_string(),
                         kind: TaskTypeDef::Agent {
                             model_id: "model".to_string(),
+                            thinking_level: None,
                             provider_url: "provider".to_string(),
                             prompt: "prompt".to_string(),
                             tools: vec![],

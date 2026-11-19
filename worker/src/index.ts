@@ -1,3 +1,4 @@
+import { HttpModelCredentialsAdapter } from './adapters/HttpModelCredentialsAdapter.js';
 import { ExecutorFactory } from './adapters/executors/ExecutorFactory.js';
 import { FileCredentialsAdapter, defaultCredentialsFilePath } from './adapters/FileCredentialsAdapter.js';
 import { FileSessionStore } from './adapters/FileSessionStore.js';
@@ -277,14 +278,13 @@ async function postTaskResultUntilAck(
 }
 
 async function runWorker(
+    baseUrl: string,
     workerId: string,
     workerHostId: string,
     executorFactory: ExecutorFactory,
     credentialsAdapter: CredentialsPort,
     sessionStore: SessionStore
 ) {
-    const baseUrl = (process.env.RELAYFOLD_ORCHESTRATOR_HTTP_URL || DEFAULT_ORCHESTRATOR_HTTP_URL)
-        .replace(/\/$/, '');
     logger.info({ baseUrl, workerId, workerHostId }, "Connecting to orchestrator HTTP API");
 
     let heartbeatPolicy = await registerWorkerUntilAck(baseUrl, workerId, workerHostId);
@@ -333,12 +333,14 @@ async function main() {
 
     const workerId = createWorkerId();
     const workerHostId = requiredWorkerHostId();
-    const executorFactory = new ExecutorFactory();
+    const baseUrl = (process.env.RELAYFOLD_ORCHESTRATOR_HTTP_URL || DEFAULT_ORCHESTRATOR_HTTP_URL)
+        .replace(/\/$/, '');
+    const executorFactory = new ExecutorFactory(new HttpModelCredentialsAdapter(baseUrl));
     const credentialsFilePath = defaultCredentialsFilePath();
     const credentialsAdapter = await FileCredentialsAdapter.fromFile(credentialsFilePath);
     const sessionStore = new FileSessionStore();
 
-    await runWorker(workerId, workerHostId, executorFactory, credentialsAdapter, sessionStore);
+    await runWorker(baseUrl, workerId, workerHostId, executorFactory, credentialsAdapter, sessionStore);
 }
 
 main().catch((err) => {

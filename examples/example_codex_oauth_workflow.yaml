@@ -1,0 +1,38 @@
+id: codex-oauth-test
+description: Test the installation's Codex OAuth connection with one Agent task.
+
+# Sign in on the orchestrator with: orchestrator login openai-codex
+# OAuth tokens are supplied centrally; no model API key is required here.
+tasks:
+  - id: summarize-changes
+    kind:
+      agent:
+        model_id: "openai-codex/gpt-6.1-sol"
+        thinking_level: medium
+        provider_url: ""
+        prompt: |
+          Write a short release announcement for these RelayFold changes:
+          - Operators can sign in to Codex with their existing ChatGPT account.
+          - The orchestrator stores credentials and renews access tokens centrally.
+          - Workers request access tokens before model calls.
+
+          Explain the benefit to workflow authors in two sentences.
+          Use only the facts above. Return a JSON object with a single
+          "response" string containing the announcement.
+        tools: []
+        skills: []
+        ask: false
+        schema_failure_retry_times: 1
+        reuse_session: false
+    output_schema:
+      type: object
+      required:
+        - response
+      additionalProperties: false
+      properties:
+        response:
+          type: string
+          minLength: 1
+    required_credentials: []
+
+data_bindings: []
