@@ -1045,6 +1045,7 @@ mod tests {
         let mut def = workflow_def_with_task("workflow", "task");
         def.tasks[0].kind = TaskTypeDef::Agent {
             model_id: "test/model".into(),
+            thinking_level: None,
             provider_url: "".into(),
             prompt: "work".into(),
             tools: vec![],

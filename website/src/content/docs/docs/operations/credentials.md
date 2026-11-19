@@ -201,6 +201,7 @@ export RELAYFOLD_ORCHESTRATOR_UID=$(id -u)
 export RELAYFOLD_ORCHESTRATOR_GID=$(id -g)
 mkdir -p "${RELAYFOLD_OAUTH_DIR:-$HOME/.relayfold/oauth}"
 chmod 700 "${RELAYFOLD_OAUTH_DIR:-$HOME/.relayfold/oauth}"
+cargo run --manifest-path orchestrator/Cargo.toml -- --help
 cargo run --manifest-path orchestrator/Cargo.toml -- login openai-codex
 docker compose up -d
 ```
