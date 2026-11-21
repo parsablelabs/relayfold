@@ -26,6 +26,7 @@ test("fetches a labeled issue and all comment pages without an LLM", async () =>
   const run = createIssueAndPrFetcher({
     fetch: async (url, options) => {
       requests.push({ url, options });
+      if (new URL(url).pathname.endsWith("/pulls")) return reply([]);
       if (!url.includes("/comments")) return reply(issue);
       return reply(
         url.endsWith("page=1")
@@ -44,7 +45,7 @@ test("fetches a labeled issue and all comment pages without an LLM", async () =>
     body: issue.body,
     comments: [...Array(100).fill("Discussion"), "Final clarification"],
   });
-  assert.equal(requests.length, 3);
+  assert.equal(requests.length, 4);
   assert.equal(
     requests[0].url,
     "https://api.github.com/repos/example/service/issues/7",
@@ -56,12 +57,8 @@ test("fetches a labeled issue and all comment pages without an LLM", async () =>
   }
 });
 
-test("unready issues exit without fetching comments, regardless of old labels", async () => {
-  for (const labels of [
-    [],
-    [{ name: "relayfold" }],
-    [{ name: "relayfold:pr-created" }],
-  ]) {
+test("issues without readiness or a published PR exit before fetching comments", async () => {
+  for (const labels of [[], ["relayfold"], ["bug"]]) {
     let calls = 0;
     const run = createIssueAndPrFetcher({
       fetch: async () => {
@@ -69,29 +66,16 @@ test("unready issues exit without fetching comments, regardless of old labels", 
         return reply({ ...issue, labels });
       },
     });
-    const result = await run(context);
-    assert.match(result._workflow_exit_reason, /agent-ready/);
-    assert.equal(result.repository, "example/service");
-    assert.equal(result.issue_number, issue.number);
-    assert.equal(result.issue_url, issue.html_url);
-    assert.equal(result.title, issue.title);
-    assert.equal(result.body, issue.body);
-    assert.equal(result.state, "OPEN");
-    assert.deepEqual(result.comments, []);
+    assert.match((await run(context))._workflow_exit_reason, /agent-ready/);
     assert.equal(calls, 1);
   }
 });
 
-test("rejects PR inputs before fetching comments", async () => {
-  let calls = 0;
+test("rejects pull request numbers before fetching comments", async () => {
   const run = createIssueAndPrFetcher({
-    fetch: async () => {
-      calls++;
-      return reply({ ...issue, pull_request: {} });
-    },
+    fetch: async () => reply({ ...issue, pull_request: {} }),
   });
   await assert.rejects(run(context), /pull request/);
-  assert.equal(calls, 1);
 });
 
 test("validates input before making GitHub requests", async () => {
@@ -141,10 +125,7 @@ test("fails rather than returning incomplete or invalid GitHub data", async () =
 test("generated Function preserves empty bodies and comments without dependencies", async () => {
   const artifact = JSON.parse(
     await readFile(
-      new URL(
-        "../dist/github-issue-to-pr.fetch_issue_and_pr.json",
-        import.meta.url,
-      ),
+      new URL("../dist/github-issue-to-pr.fetch_issue_and_pr.json", import.meta.url),
       "utf8",
     ),
   );
@@ -153,46 +134,37 @@ test("generated Function preserves empty bodies and comments without dependencie
     `data:text/javascript;base64,${Buffer.from(artifact.code).toString("base64")}`
   );
   const result = await module.createIssueAndPrFetcher({
-    fetch: async (url) =>
-      reply(
-        url.includes("/comments")
-          ? [{ body: null }]
-          : { ...issue, body: null, state: "closed" },
-      ),
+    fetch: async (url) => {
+      if (new URL(url).pathname.endsWith("/pulls")) return reply([]);
+      return reply(url.includes("/comments")
+        ? [{ body: null }]
+        : { ...issue, body: null, state: "closed" });
+    },
   })(context);
   assert.equal(result.body, "");
   assert.equal(result.state, "CLOSED");
   assert.deepEqual(result.comments, [""]);
 });
 
-const prContext = {
-  ...context,
-  inputs: [{ ...context.inputs[0], pr_number: 12 }],
-};
+const prContext = { ...context, inputs: [{ ...context.inputs[0], pr_number: 12 }] };
 const pull = {
-  number: 12,
-  title: "Existing change",
-  body: "Implementation",
-  html_url: "https://github.com/example/service/pull/12",
-  state: "open",
-  head: { ref: "fix-failure" },
+  number: 12, title: "Existing change", body: "Implementation",
+  html_url: "https://github.com/example/service/pull/12", state: "open",
+  head: { ref: "fix-failure", repo: { full_name: "example/service" } },
 };
 
 test("fetches all pages of PR conversations, inline comments, and review summaries", async () => {
   const requests = [];
-  const run = createIssueAndPrFetcher({
-    fetch: async (url) => {
-      requests.push(url);
-      if (url.endsWith("/issues/7")) return reply(issue);
-      if (url.endsWith("/pulls/12")) return reply(pull);
-      if (url.includes("/issues/7/comments")) return reply([]);
-      return reply(
-        url.endsWith("page=1")
-          ? Array.from({ length: 100 }, () => ({ body: "Earlier feedback" }))
-          : [{ body: "Latest feedback" }],
-      );
-    },
-  });
+  const run = createIssueAndPrFetcher({ fetch: async (url) => {
+    requests.push(url);
+    if (url.endsWith("/issues/7")) return reply(issue);
+    if (url.endsWith("/user")) return reply({ id: 999 });
+    if (url.endsWith("/pulls/12")) return reply(pull);
+    if (url.includes("/issues/7/comments")) return reply([]);
+    return reply(url.endsWith("page=1")
+      ? Array.from({ length: 100 }, (_, index) => ({ id: index + 1, author_association: "MEMBER", body: "Earlier feedback" }))
+      : [{ id: 101, author_association: "MEMBER", body: "Latest feedback" }]);
+  }});
   const result = await run(prContext);
   assert.equal(result.pr.pr_number, 12);
   assert.equal(result.pr.branch, "fix-failure");
@@ -201,39 +173,25 @@ test("fetches all pages of PR conversations, inline comments, and review summari
     assert.equal(result.pr[field].length, 101);
     assert.equal(result.pr[field].at(-1), "Latest feedback");
   }
-  assert.equal(requests.length, 9);
+  assert.equal(requests.length, 10);
 });
 
 test("rejects invalid optional PR numbers before requests", async () => {
   for (const pr_number of [null, 0, -1, 1.5, "12"]) {
-    const run = createIssueAndPrFetcher({
-      fetch: () => assert.fail("No request expected"),
-    });
-    await assert.rejects(
-      run({ ...context, inputs: [{ ...context.inputs[0], pr_number }] }),
-      /pr_number/,
-    );
+    const run = createIssueAndPrFetcher({ fetch: () => assert.fail("No request expected") });
+    await assert.rejects(run({ ...context, inputs: [{ ...context.inputs[0], pr_number }] }), /pr_number/);
   }
 });
 
 test("fails on missing PRs, invalid responses, and incomplete PR feedback", async () => {
-  for (const failingPath of [
-    "/pulls/12",
-    "/issues/12/comments",
-    "/pulls/12/comments",
-    "/pulls/12/reviews",
-  ]) {
+  for (const failingPath of ["/pulls/12", "/issues/12/comments", "/pulls/12/comments", "/pulls/12/reviews"]) {
     for (const failure of [reply(null, 404), reply({})]) {
-      const run = createIssueAndPrFetcher({
-        fetch: async (url) => {
-          if (url.includes(failingPath)) return failure;
-          if (url.endsWith("/issues/7")) return reply(issue);
-          if (url.endsWith("/pulls/12")) return reply(pull);
-          if (url.includes("/issues/12/comments"))
-            return reply([{ body: "Requested change" }]);
-          return reply([]);
-        },
-      });
+      const run = createIssueAndPrFetcher({ fetch: async (url) => {
+        if (url.includes(failingPath)) return failure;
+        if (url.endsWith("/issues/7")) return reply(issue);
+        if (url.endsWith("/pulls/12")) return reply(pull);
+        return reply([]);
+      }});
       await assert.rejects(run(prContext), /404|Invalid GitHub/);
     }
   }
@@ -248,12 +206,13 @@ function existingPrFetch({
   pullResponse = pull,
 } = {}) {
   return async (url) => {
+    if (url.endsWith("/user")) return reply({ id: 999 });
     if (url.endsWith("/issues/7")) return reply({ ...issue, labels });
     if (url.endsWith("/pulls/12")) return reply(pullResponse);
     if (url.includes("/issues/7/comments")) return reply(issueComments);
-    if (url.includes("/issues/12/comments")) return reply(discussion);
-    if (url.includes("/pulls/12/comments")) return reply(reviewComments);
-    if (url.includes("/pulls/12/reviews")) return reply(reviews);
+    if (url.includes("/issues/12/comments")) return reply(discussion.map((comment, index) => ({ id: index + 1, author_association: "MEMBER", ...comment })));
+    if (url.includes("/pulls/12/comments")) return reply(reviewComments.map((comment, index) => ({ id: index + 1, author_association: "MEMBER", ...comment })));
+    if (url.includes("/pulls/12/reviews")) return reply(reviews.map((comment, index) => ({ id: index + 1, author_association: "MEMBER", ...comment })));
     return reply([]);
   };
 }
@@ -270,21 +229,17 @@ test("selects developer feedback while ignoring bots and RelayFold summaries", a
     }),
   })(prContext);
   assert.equal(result.pr.pr_number, 12);
-  assert.deepEqual(result.change_request, { body: "Add validation", url: "request" });
+  assert.deepEqual(result.feedback.at(-1), { id: "discussion:2", body: "Add validation", url: "request" });
 });
 
-test("requires developer feedback when continuing a PR", async () => {
+test("exits successfully when a PR has no eligible feedback", async () => {
   for (const discussion of [
     [],
     [{ body: "Robot", user: { type: "Bot" } }],
     [{ body: " " }],
   ]) {
-    await assert.rejects(
-      createIssueAndPrFetcher({ fetch: existingPrFetch({ discussion }) })(
-        prContext,
-      ),
-      /no developer/,
-    );
+    const result = await createIssueAndPrFetcher({ fetch: existingPrFetch({ discussion }) })(prContext);
+    assert.match(result._workflow_exit_reason, /new PR feedback/);
   }
 });
 
@@ -292,10 +247,10 @@ test("requires developer feedback when continuing a PR", async () => {
 test("continues a PR from a submitted review without conversation comments", async () => {
   const review = { body: "Undo README change and move manual testing to PR description", html_url: "https://github.com/example/service/pull/12#pullrequestreview-1", submitted_at: "2026-10-11T12:00:00Z", state: "COMMENTED", user: { type: "User" } };
   const result = await createIssueAndPrFetcher({ fetch: existingPrFetch({ reviews: [review] }) })(prContext);
-  assert.deepEqual(result.change_request, { body: review.body, url: review.html_url });
+  assert.deepEqual(result.feedback, [{ id: "review:1", body: review.body, url: review.html_url }]);
 });
 
-test("selects latest human feedback across discussion, inline comments, and submitted reviews", async () => {
+test("orders human feedback across discussion, inline comments, and submitted reviews", async () => {
   const result = await createIssueAndPrFetcher({ fetch: existingPrFetch({
     discussion: [{ body: "Older discussion", created_at: "2026-10-10T12:00:00Z" }],
     reviews: [
@@ -305,7 +260,7 @@ test("selects latest human feedback across discussion, inline comments, and subm
     ],
     reviewComments: [{ body: "Newest human request", html_url: "inline-url", created_at: "2026-10-11T12:00:00Z" }],
   }) })(prContext);
-  assert.deepEqual(result.change_request, { body: "Newest human request", url: "inline-url" });
+  assert.deepEqual(result.feedback.map(({ body }) => body), ["Older review", "Older discussion", "Newest human request"]);
 });
 
 const repositoryContext = { ...context, inputs: [{ repository: 'example/service' }] };
@@ -317,42 +272,28 @@ test('repository-only input lists all pages, skips ineligible issues, and select
     assert.equal(options.headers.Authorization, 'Bearer test-token');
     const parsed = new URL(url);
     if (parsed.pathname.endsWith('/issues')) {
+      if (parsed.searchParams.get('labels') === 'relayfold:pr-created') return reply([]);
       for (const [key, value] of Object.entries({ state: 'open', labels: 'relayfold:agent-ready', sort: 'created', direction: 'asc', per_page: '100' }))
         assert.equal(parsed.searchParams.get(key), value);
       return reply(parsed.searchParams.get('page') === '1'
-        ? Array(100).fill({ ...issue, labels: ['relayfold:pr-created'] })
+        ? Array.from({ length: 100 }, (_, index) => ({ ...issue, number: index + 100, labels: ["relayfold", "relayfold:human-input-needed"] }))
         : [
           { ...issue, number: 8, pull_request: {} },
           { ...issue, number: 9, state: 'closed' },
-          { ...issue, number: 10, labels: ['relayfold:human-input-needed'] },
+          { ...issue, number: 10, labels: ['relayfold', 'relayfold:human-input-needed'] },
           { ...issue, number: 11, labels: ['bug'] },
-          { ...issue, labels: [...issue.labels, 'relayfold:pr-created', 'relayfold:human-input-needed'] }, { ...issue, number: 13 },
+          issue, { ...issue, number: 13 },
         ]);
     }
-    if (parsed.pathname.endsWith('/issues/7')) return reply({ ...issue, labels: [...issue.labels, 'relayfold:human-input-needed'] });
+    if (parsed.pathname.endsWith('/issues/7')) return reply(issue);
+    if (parsed.pathname.endsWith('/pulls')) return reply([]);
     assert(parsed.pathname.endsWith('/issues/7/comments'));
     return reply([{ body: 'Selected discussion' }]);
   }});
   const result = await run(repositoryContext);
   assert.equal(result.issue_number, 7);
   assert.deepEqual(result.comments, ['Selected discussion']);
-  assert.equal(calls.length, 4);
-});
-
-test('automatic selection exits successfully after listing no eligible issues', async () => {
-  for (const candidates of [[], [{ ...issue, labels: ['relayfold:pr-created'] }], [{ ...issue, pull_request: {} }]]) {
-    let calls = 0;
-    const run = createIssueAndPrFetcher({ fetch: async url => {
-      calls++;
-      assert(new URL(url).pathname.endsWith('/issues'));
-      return reply(candidates);
-    }});
-    const result = await run(repositoryContext);
-    assert.equal(result.repository, 'example/service');
-    assert.match(result._workflow_exit_reason, /No eligible open issues/);
-    assert.equal(Object.hasOwn(result, 'issue_number'), false);
-    assert.equal(calls, 1);
-  }
+  assert.equal(calls.length, 6);
 });
 
 test('automatic selection fails clearly for invalid, failed, or incomplete listings', async () => {
@@ -365,28 +306,25 @@ test('automatic selection fails clearly for invalid, failed, or incomplete listi
   let calls = 0;
   const run = createIssueAndPrFetcher({ fetch: async url => {
     calls++;
-    assert(new URL(url).pathname.endsWith('/issues'));
-    return reply(Array(100).fill(issue));
+    const parsed = new URL(url);
+    assert(parsed.pathname.endsWith('/issues'));
+    return reply(parsed.searchParams.get('labels') === 'relayfold:agent-ready' ? Array(100).fill(issue) : []);
   }});
   await assert.rejects(run(repositoryContext), /issue pagination limit/);
-  assert.equal(calls, 100);
+  assert.equal(calls, 101);
 });
 
 test('automatic selection rechecks issue state and label guards before loading comments', async () => {
   for (const changed of [
     { state: 'closed' }, { labels: [] }, { pull_request: {} },
-    { labels: ['relayfold:pr-created'] },
-    { labels: ['relayfold:human-input-needed'] },
+    { labels: ['relayfold', 'relayfold:human-input-needed'] },
   ]) {
     const run = createIssueAndPrFetcher({ fetch: async url => {
       if (new URL(url).pathname.endsWith('/issues')) return reply([issue]);
       assert(new URL(url).pathname.endsWith('/issues/7'));
       return reply({ ...issue, ...changed });
     }});
-    if (changed.labels)
-      assert.match((await run(repositoryContext))._workflow_exit_reason, /agent-ready/);
-    else
-      await assert.rejects(run(repositoryContext), /no longer open|pull request/);
+    assert.match((await run(repositoryContext))._workflow_exit_reason, /No eligible issue/);
   }
 });
 
@@ -395,70 +333,4 @@ test('optional issue numbers are validated and PR input requires an explicit iss
   for (const issue_number of [null, 0, -1, 1.5, '7'])
     await assert.rejects(run({ ...context, inputs: [{ repository: 'example/service', issue_number }] }), /issue_number/);
   await assert.rejects(run({ ...context, inputs: [{ repository: 'example/service', pr_number: 12 }] }), /issue_number/);
-});
-
-test("agent-ready overrides old status labels and resolves PR from latest marked summary", async () => {
-  const run = createIssueAndPrFetcher({
-    fetch: existingPrFetch({
-      labels: [
-        ...issue.labels,
-        { name: "relayfold:pr-created" },
-        { name: "relayfold:human-input-needed" },
-      ],
-      issueComments: [
-        { body: "Old PR https://github.com/example/service/pull/99" },
-        {
-          body: "<!-- relayfold:issue-to-pr --> PR: https://github.com/example/service/pull/12",
-        },
-      ],
-      discussion: [
-        {
-          body: "Earlier request",
-          html_url: "earlier",
-          user: { type: "User" },
-        },
-        { body: "Add validation", html_url: "request", user: { type: "User" } },
-        { body: "Automated response", user: { type: "Bot" } },
-        {
-          body: "<!-- relayfold:issue-to-pr --> status",
-          user: { type: "User" },
-        },
-      ],
-    }),
-  });
-  const result = await run(context);
-  assert.equal(result.pr.pr_number, 12);
-  assert.deepEqual(result.change_request, {
-    body: "Add validation",
-    url: "request",
-  });
-});
-
-test("resolves legacy summary links without requiring the old relayfold label", async () => {
-  const result = await createIssueAndPrFetcher({
-    fetch: existingPrFetch({
-      issueComments: [
-        { body: "Created https://github.com/example/service/pull/12." },
-      ],
-      discussion: [{ body: "Improve the tests" }],
-    }),
-  })(context);
-  assert.equal(result.pr.pr_number, 12);
-});
-
-test("ambiguous or missing marked PR links require explicit pr_number", async () => {
-  for (const body of [
-    "No link",
-    "https://github.com/example/service/pull/12 https://github.com/example/service/pull/13",
-  ]) {
-    await assert.rejects(
-      createIssueAndPrFetcher({
-        fetch: existingPrFetch({
-          labels: [...issue.labels, { name: "relayfold:pr-created" }],
-          issueComments: [{ body }],
-        }),
-      })(context),
-      /specify pr_number/,
-    );
-  }
 });

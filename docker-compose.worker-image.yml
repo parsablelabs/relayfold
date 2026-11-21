@@ -1,0 +1,5 @@
+# Use a prebuilt worker image with the development stack.
+services:
+  worker:
+    build: !reset null
+    image: ${RELAYFOLD_WORKER_IMAGE:?set RELAYFOLD_WORKER_IMAGE to a worker image reference}

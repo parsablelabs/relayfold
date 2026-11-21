@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createIssueUpdater } from "../src/update-issue.mjs";
+import { createIssueStatusUpdater } from "../src/update-issue-status.mjs";
 import { readFile } from "node:fs/promises";
 
 const identifiers = { repository: "example/service", issue_number: 7 };
@@ -34,8 +34,10 @@ const reply = (json, status = 201) => ({
 test("publishes identifiable summaries for new and reused PRs with requested changes and checks", async () => {
   for (const pr_created of [true, false]) {
     let posts = 0;
-    const run = createIssueUpdater({
+    const run = createIssueStatusUpdater({
       fetch: async (url, options) => {
+        if (url.endsWith("/user")) return reply({ id: 999 });
+        if (!options.method) return reply([]);
         posts++;
         assert.equal(
           url,
@@ -47,11 +49,11 @@ test("publishes identifiable summaries for new and reused PRs with requested cha
         const { body } = JSON.parse(options.body);
         assert(body.includes(pr_created ? "PR created" : "PR updated"));
         for (const text of [
-          "<!-- relayfold:issue-to-pr -->",
+          "<!-- relayfold:issue-to-pr {",
           implementation.summary,
           pr.pr_url,
           "npm test: passed",
-          "Request: https://github.com/example/service/pull/12#issuecomment-10",
+          ...(pr_created ? [] : ["Processed 1 new feedback item"]),
         ])
           assert(body.includes(text));
         return reply({ id: 101, body });
@@ -64,10 +66,10 @@ test("publishes identifiable summaries for new and reused PRs with requested cha
         { ...pr, pr_created },
         {
           ...issue,
-          change_request: {
-            body: "Add validation",
-            url: pr.pr_url + "#issuecomment-10",
-          },
+          ...(!pr_created ? {
+            pr: { pr_number: 12 },
+            feedback: [{ id: "discussion:10", body: "Add validation" }],
+          } : {}),
         },
       ],
     });
@@ -78,8 +80,10 @@ test("publishes identifiable summaries for new and reused PRs with requested cha
 });
 
 test("acknowledges successful no-work without inventing a PR", async () => {
-  const result = await createIssueUpdater({
+  const result = await createIssueStatusUpdater({
     fetch: async (url, options) => {
+      if (url.endsWith("/user")) return reply({ id: 999 });
+      if (!options.method) return reply([]);
       const { body } = JSON.parse(options.body);
       assert(body.includes("No PR needed"));
       return reply({ id: 1, body });
@@ -96,7 +100,7 @@ test("acknowledges successful no-work without inventing a PR", async () => {
 });
 
 test("unresolved questions, missing publication, and inconsistent identifiers never post", async () => {
-  const run = createIssueUpdater({
+  const run = createIssueStatusUpdater({
     fetch: () => assert.fail("No request expected"),
   });
   for (const inputs of [
@@ -131,8 +135,10 @@ test("failed or uncertain publication never returns success and is not retried",
     new Error("Connection lost"),
   ]) {
     let calls = 0;
-    const run = createIssueUpdater({
-      fetch: async () => {
+    const run = createIssueStatusUpdater({
+      fetch: async (url, options) => {
+        if (url.endsWith("/user")) return reply({ id: 999 });
+        if (!options.method) return reply([]);
         calls++;
         if (response instanceof Error) throw response;
         return response;
@@ -146,7 +152,7 @@ test("failed or uncertain publication never returns success and is not retried",
 test("generated summary Function has no dependencies and publishes a marked comment", async () => {
   const artifact = JSON.parse(
     await readFile(
-      new URL("../dist/github-issue-to-pr.update_issue.json", import.meta.url),
+      new URL("../dist/github-issue-to-pr.update_issue_status.json", import.meta.url),
       "utf8",
     ),
   );
@@ -156,9 +162,12 @@ test("generated summary Function has no dependencies and publishes a marked comm
   );
   assert.equal(
     (
-      await module.createIssueUpdater({
-        fetch: async (url, options) =>
-          reply({ id: 1, body: JSON.parse(options.body).body }),
+      await module.createIssueStatusUpdater({
+        fetch: async (url, options) => {
+          if (url.endsWith("/user")) return reply({ id: 999 });
+          if (!options.method) return reply([]);
+          return reply({ id: 1, body: JSON.parse(options.body).body });
+        },
       })(context)
     ).commented,
     true,

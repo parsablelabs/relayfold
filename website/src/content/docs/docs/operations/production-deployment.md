@@ -4,9 +4,8 @@ description: Harden the starter Docker Compose configuration for a trusted, sing
 ---
 
 RelayFold publishes separate orchestrator and worker images as one compatible
-release. Use those same images for local and production deployments. Production
-differs through configuration, networking, storage, resource limits, and
-operational controls rather than through production-specific images.
+release. Both local and production deployments can use the published worker
+directly or extend it with project tooling.
 
 :::danger[Work in progress]
 RelayFold and this deployment guidance are not yet production-hardened. This
@@ -55,6 +54,60 @@ RELAYFOLD_WORKER_IMAGE=ghcr.io/parsablelabs/relayfold-worker@sha256:<digest>
 Keep image selection in `config.env`; do not edit software into a running
 container. Test upgrades against a copy of production configuration and data,
 and keep the previous image digests available for rollback.
+
+### Build a worker image for your project
+
+Use the RelayFold worker from the same release as your orchestrator as the base
+image. In the derived Dockerfile, install your project's compilers, test
+runners, browser binaries, and other tools at build time. Put installed tools
+on `PATH` and keep any preinstalled project dependencies outside `/workspaces`
+and `/home/relayfold/.cache`, which are mounted at runtime. Keep the inherited
+worker entrypoint and its `/app` working directory, and restore `USER relayfold`
+after package installation.
+
+The [project worker example](https://github.com/parsablelabs/relayfold/tree/main/examples/project-worker)
+adds ripgrep and installs the RelayFold worker's locked development dependencies.
+To build it from the RelayFold repository root, run:
+
+```bash
+docker build -t relayfold-worker:local worker
+docker build -f examples/project-worker/Dockerfile -t relayfold-worker-project:dev .
+```
+
+For a release deployment, supply your matching Node.js 24 worker image tag or
+digest with `--build-arg RELAYFOLD_WORKER_BASE_IMAGE=<image>`. Build for the
+platform used by your deployment. The packaged `rf up` command uses
+`linux/amd64` on Apple Silicon.
+
+Set `RELAYFOLD_WORKER_IMAGE=relayfold-worker-project:dev` in
+`~/.relayfold/config.env`. Run `rf up -d` to start the deployment, or use
+`rf up -d --no-deps worker` to update the worker in a running deployment. Use a
+new image tag for each rebuild so Compose picks up the image change. For a
+remote worker host, push the image to a registry it can pull from and use that
+image reference.
+
+During workspace preparation, link the baked dependencies into a fresh
+checkout so the agent can use the project's usual commands. For this example,
+run the following once from the checkout's `worker/` directory inside the
+container:
+
+```sh
+deps=/opt/relayfold-project-deps
+cmp package.json "$deps/package.json" &&
+  cmp package-lock.json "$deps/package-lock.json" &&
+  ln -sT "$deps/node_modules" node_modules
+```
+
+Once the workspace is prepared, the agent can run `npm run build` and `npm test`
+directly. If either manifest differs, rebuild the image from the target
+checkout. For your own project, use its CI tool versions and lockfile as build
+inputs and verify that a fresh checkout can run its usual commands with
+dependency downloads disabled.
+
+Image selection applies to a worker deployment. Use a dedicated orchestrator
+and worker pool for workflows that require a specific toolchain if other workers
+in your deployment use different toolchains. See
+[Partition orchestrators](/relayfold/docs/operations/scaling/#partition-orchestrators).
 
 ### Standalone orchestrator
 
