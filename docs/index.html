@@ -118,6 +118,13 @@ share the same color.
 Completed diagram nodes and <strong>Success</strong> labels in the instance list, instance
 summary, and task attempts use matching green accents.
 Verifier tasks appear in the diagram and task table alongside other steps.
+Completed attempts have an eye action in the task table. Select it to preview
+that attempt’s output as formatted JSON in a dialog. Output loads on demand for
+the selected generation; earlier attempts show their own results. The action is
+disabled for attempts that have not completed.
+Attempts that produced Agent feedback show a speech-bubble action in the task
+table. Select it to read the feedback in a dialog. Feedback arrives with the
+status report, so displaying or opening it needs no additional API requests.
 Diagrams use compact spacing and small monospace labels; wide diagrams scroll
 horizontally within their panel.
 Instance diagram connections animate only while the workflow is <strong>Running</strong>,
@@ -133,11 +140,23 @@ state is active. Diagram YAML loads once and is reused for status updates;
 workflow definition pages also load YAML once, with manual Refresh available.
 <strong>Instance Events</strong> fetches event history only when opened; reopen
 the tab or select its <strong>Refresh</strong> button to update events. Event history does
-not refresh automatically.</p>
+not refresh automatically.
+Event summaries include the task name for task and verifier events. Failed status
+changes appear in red and successful status changes in green, with status text
+shown alongside the event name. Workflow-wide events have no task name.</p>
+<p>Use <strong>Queue</strong> to see workflows waiting for processing in your current namespace.
+The page shows the queued count, instance IDs linked to their details, workflow
+names, instance statuses, and task completion counts. It refreshes every five
+seconds, including when empty, and offers a manual <strong>Refresh</strong> button. Instance
+statuses describe the workflow state; they can be <strong>Pending</strong> or <strong>Running</strong>
+when queued for further processing. Queue contents and instance details are read
+separately, so an entry whose details are unavailable remains visible until the
+next refresh. This view excludes work already dequeued for processing and does
+not show the worker task dispatch queue.</p>
 <p>Configure the orchestrator’s public API host in <strong>Settings</strong>. The host is saved
 in your browser. Controls support standard Tab navigation and Enter activation.</p>
-<p>Console pages have shareable URLs: <code dir="auto">/functions</code>, <code dir="auto">/workflows</code>, <code dir="auto">/instances</code>, and
-<code dir="auto">/settings</code>. Detail pages append the definition or instance ID, such as
+<p>Console pages have shareable URLs: <code dir="auto">/functions</code>, <code dir="auto">/workflows</code>, <code dir="auto">/instances</code>,
+<code dir="auto">/queue</code>, and <code dir="auto">/settings</code>. Detail pages append the definition or instance ID, such as
 <code dir="auto">/functions/format.hello</code> or <code dir="auto">/instances/123</code>. Links support opening in a new tab,
 and browser Back and Forward restore the previous view. Refreshing a detail URL
 opens that same view. <code dir="auto">/</code> opens the instance list.
