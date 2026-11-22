@@ -89,9 +89,15 @@ The first poll of a PR tracked by an older issue summary can include comments
 that were already addressed. The implementation Agent checks them against the
 current branch before making changes.
 
-All Agent tasks share a workspace within the run. A subsequent poll uses the
-remote PR branch and GitHub discussion for context. Verifier retries within one
-run can reuse the implementation Agent's session.
+The Agent tasks share the `repo` workspace, which also serves as the Git checkout
+root. The implementation task initializes Git and fetches the upstream
+repository in place because the workspace already contains RelayFold's
+`.timestamp` file. It excludes that file locally so it stays out of commits.
+Implementation, review, and publishing can run repository commands directly
+from their starting directory. If an earlier attempt created a nested checkout,
+the tasks continue working there. A subsequent poll uses the remote PR branch
+and GitHub discussion for context. Verifier retries within one run can reuse
+the implementation Agent's session.
 
 ## Register the workflow
 
