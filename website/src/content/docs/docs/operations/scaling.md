@@ -95,10 +95,20 @@ scripts/run-local-dev.sh
 
 The script builds the orchestrator using the local Cargo cache, builds and starts
 only the Compose workers, and runs the orchestrator in the foreground. Ctrl-C
-stops the workers. Pass `--skip-build` to reuse the existing orchestrator binary;
-worker images are still built. Storage and logging settings use the same
-environment variables as `scripts/run-orchestrator-dev.sh`.
+stops the workers. Pass `--skip-build` to reuse the existing orchestrator binary.
+Storage and logging settings use the same environment variables as
+`scripts/run-orchestrator-dev.sh`.
 On macOS, the script points workers at `http://host.docker.internal:3001`.
+
+By default, the script builds the worker image from the checkout. To start the
+workers from a prebuilt image, pass `--worker-image` with a local tag or a
+registry reference. This option can be combined with `--skip-build`.
+
+```bash
+scripts/run-local-dev.sh --worker-image relayfold-worker-project:dev
+```
+
+See [Build a worker image for your project](/relayfold/docs/operations/production-deployment/#build-a-worker-image-for-your-project).
 
 To manage the processes separately, run `scripts/run-orchestrator-dev.sh` in one
 terminal and start workers in another:

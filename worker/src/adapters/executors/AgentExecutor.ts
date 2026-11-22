@@ -5,7 +5,7 @@ import { createModelRuntime } from '../ModelRuntimeAdapter.js';
 import { withModelStreamErrors } from '../ModelStream.js';
 import type { ModelCredentialsPort } from '../../core/ports/ModelCredentialsPort.js';
 import { Agent } from '@earendil-works/pi-agent-core';
-import { DefaultResourceLoader, getAgentDir, createAgentSession, createCodingTools, formatSkillsForPrompt, SessionManager, type Skill } from '@earendil-works/pi-coding-agent';
+import { DefaultResourceLoader, getAgentDir, createAgentSession, createCodingTools, formatSkillsForPrompt, SessionManager, SettingsManager, type Skill } from '@earendil-works/pi-coding-agent';
 import { logger } from '../../utils/logger.js';
 import { createJsonSchemaValidator } from '../../core/JsonSchemaValidator.js';
 import { createBraveSearchTool } from './agent_tools/braveSearchTool.js';
@@ -172,7 +172,7 @@ export function buildAgentPromptParts(args: {
     currentEventContext += `
                 \n\n
                 WORKSPACE:
-                Use this selected workspace path for task file work:
+                Your working directory for this task is:
                 ${args.workspacePath}
                 `;
 
@@ -324,6 +324,7 @@ export class AgentExecutor implements TaskExecutor {
         const modelIdFull = agentDef.model_id as string;
         const providerUrl = agentDef.provider_url as string;
         const prompt = agentDef.prompt as string;
+        const workspacePath = payload.workspace_path;
 
         // START - Configure Agent
         const parts = modelIdFull.split('/');
@@ -367,7 +368,7 @@ export class AgentExecutor implements TaskExecutor {
                     if (session_data !== null) {
                         sessionReused = true;
                         const tempSessionFilePath = await materializePiSessionFile(sessionKey, session_data.content);
-                        sessionManager = SessionManager.open(tempSessionFilePath);
+                        sessionManager = SessionManager.open(tempSessionFilePath, undefined, workspacePath);
                         logger.info(
                             { sessionKey, attempt },
                             "Loaded existing agent session"
@@ -386,7 +387,7 @@ export class AgentExecutor implements TaskExecutor {
         
         if (sessionManager == null) {
             logger.info("Creating new agent session");
-            sessionManager = SessionManager.create(process.cwd(), nativeSessionDir())
+            sessionManager = SessionManager.create(workspacePath, nativeSessionDir());
         }
 
         // Tool setup
@@ -396,7 +397,7 @@ export class AgentExecutor implements TaskExecutor {
             createHttpRequestTool(),
             createCurrentTimeTool(),
         ]);
-        toolRegistry.registerTools(createCodingTools(process.cwd()));
+        toolRegistry.registerTools(createCodingTools(workspacePath));
         const piResources = await new PiResourceToolProvider().loadResources();
         toolRegistry.registerTools(piResources.tools);
 
@@ -455,7 +456,7 @@ export class AgentExecutor implements TaskExecutor {
 
         const { systemContext, finalPrompt } = buildAgentPromptParts({
             prompt,
-            workspacePath: payload.workspace_path,
+            workspacePath,
             inputs: payload.inputs,
             loopContext,
             inputProvided: payload.input_provided,
@@ -469,10 +470,14 @@ export class AgentExecutor implements TaskExecutor {
             canLoadSkills,
         });
 
-        // Rebuild the system instructions for every attempt, including restored sessions.
+        // Discover Pi configuration and extensions from the worker's configured locations.
+        const workerCwd = process.cwd();
+        const agentDir = getAgentDir();
+        const settingsManager = SettingsManager.create(workerCwd, agentDir);
         const resourceLoader = new DefaultResourceLoader({
-            cwd: sessionManager.getCwd(),
-            agentDir: getAgentDir(),
+            cwd: workerCwd,
+            agentDir,
+            settingsManager,
             appendSystemPromptOverride: (base) => [...base, systemContext],
         });
         await resourceLoader.reload();
@@ -481,6 +486,7 @@ export class AgentExecutor implements TaskExecutor {
         const { session } = await createAgentSession({
             sessionManager,
             resourceLoader,
+            settingsManager,
             model,
             modelRuntime,
             thinkingLevel: agentDef.thinking_level,

@@ -108,6 +108,9 @@ RELAYFOLD_ORCHESTRATOR_IMAGE=registry.example.com/relayfold-orchestrator:dev
 RELAYFOLD_WORKER_IMAGE=registry.example.com/relayfold-worker:dev
 ```
 
+Use the same worker image override to deploy an image that includes your
+project's build and test tools. See [Build a worker image for your project](/relayfold/docs/operations/production-deployment/#build-a-worker-image-for-your-project).
+
 ## Self-build path
 
 Users who need to own their image artifacts can build them from a checkout or git ref:

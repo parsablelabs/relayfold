@@ -18,8 +18,8 @@
         "dependencies": []
       },
       {
-        "id": "github-issue-to-pr.update_issue",
-        "source": "src/update-issue.mjs",
+        "id": "github-issue-to-pr.update_issue_status",
+        "source": "src/update-issue-status.mjs",
         "dependencies": []
       }
     ]

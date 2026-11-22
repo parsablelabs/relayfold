@@ -1,11 +1,61 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
+import { AgentSession } from '@earendil-works/pi-coding-agent';
 import {
+    AgentExecutor,
     buildAgentPromptParts,
     sessionLoadDiagnostic,
     shouldLoadExistingAgentSession,
     shouldReuseAgentSession,
 } from '../dist/adapters/executors/AgentExecutor.js';
+
+test('Pi uses the task workspace for shell and relative paths on fresh and restored sessions', async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'relayfold-agent-workspace-'));
+    const workspace = await realpath(root);
+    const workerCwd = process.cwd();
+    const previousHome = process.env.HOME;
+    process.env.HOME = workspace;
+    t.after(async () => {
+        if (previousHome === undefined) delete process.env.HOME;
+        else process.env.HOME = previousHome;
+        await rm(root, { recursive: true, force: true });
+    });
+    await writeFile(join(workspace, 'workspace.txt'), 'from the workspace');
+
+    const prompt = t.mock.method(AgentSession.prototype, 'prompt', async function () {
+        assert.equal(this.sessionManager.getCwd(), workspace);
+        const bash = this.agent.state.tools.find(tool => tool.name === 'bash');
+        const read = this.agent.state.tools.find(tool => tool.name === 'read');
+        assert.equal((await bash.execute('bash', { command: 'pwd -P' })).content[0].text.trim(), workspace);
+        assert.equal((await read.execute('read', { path: 'workspace.txt' })).content[0].text, 'from the workspace');
+        assert.equal(process.cwd(), workerCwd);
+    });
+
+    const executor = new AgentExecutor({ getAccessToken: async () => assert.fail('Unexpected model request') });
+    const credentials = { getCredential: async () => undefined };
+    const oldSession = [
+        { type: 'session', version: 3, id: 'old-session', timestamp: new Date().toISOString(), cwd: '/app' },
+        { type: 'message', id: 'user-msg', parentId: null, timestamp: new Date().toISOString(),
+            message: { role: 'user', content: 'Previous task input', timestamp: Date.now() } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+    const sessionStore = {
+        load: async () => ({ content: oldSession }),
+        write: async () => {},
+    };
+
+    for (const generation of [1, 2]) {
+        const input = payload({ generation_index: generation });
+        input.workspace_path = workspace;
+        input.task.kind.agent.model_id = 'openai-codex/gpt-6.1-sol';
+        input.task.kind.agent.tools = ['bash', 'read'];
+        assert.equal((await executor.execute(input, credentials, sessionStore)).status, 'ok');
+    }
+    assert.equal(prompt.mock.callCount(), 2);
+    assert.ok(prompt.mock.calls[1].this.agent.state.messages.some(message => message.content === 'Previous task input'));
+});
 
 test('session load decision is attempt-aware and honors reuse_session false', () => {
     assert.equal(shouldReuseAgentSession(payload({ generation_index: 1 })), true);

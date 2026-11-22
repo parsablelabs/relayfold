@@ -20,9 +20,14 @@ Tasks with the same `group_name` share the same workspace for the workflow run. 
 
 Function tasks receive workspace information in their execution context. This lets functions read or write files in the assigned workspace without needing to know the host layout.
 
-## Agent executor prompt
+## Agent working directory
 
-Agent tasks receive workspace context in their prompt so the agent knows where to inspect and edit files when a workflow step requires file-based work.
+Pi starts each Agent task in its assigned workspace. Shell commands and
+relative paths in Pi's built-in file tools start there, including when a task
+resumes an existing session. A task with `workspace.group_name` starts in that
+group's shared workspace. A task without a workspace group starts in its own
+task workspace. If you clone a repository into a subdirectory of the workspace,
+run repository commands from that subdirectory.
 
 ## Workspace root and layout
 

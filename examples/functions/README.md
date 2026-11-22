@@ -5,9 +5,9 @@ It receives fetched issue data, the PR publication result, and a successful issu
 summary (`commented: true`). Repository, issue, and PR identifiers must match.
 
 For a new or reused PR it ensures `relayfold:pr-created` exists and adds it without
-replacing other issue labels. This label is informational. After that succeeds,
-it removes `relayfold:agent-ready`, preventing further processing until a developer
-reapplies it. Successful no-work runs remove readiness without adding a PR marker.
+replacing other issue labels. The issue-to-PR workflow uses this marker to find
+open PRs that may have new feedback. After that succeeds, the Function removes
+`relayfold:agent-ready`. Successful no-work runs remove readiness without adding a PR marker.
 Missing summary evidence or marker failures cause no readiness removal; removal
 failures fail the task. Repeated removal confirms that readiness is absent.
 

@@ -140,7 +140,7 @@ test("marker failures never consume readiness and removal failures fail the task
   }
 });
 
-test("generated functions consume readiness and the next fetch exits", async () => {
+test("generated functions consume readiness and keep the issue eligible for PR polling", async () => {
   async function artifact(path) {
     const definition = JSON.parse(
       await readFile(new URL(path, import.meta.url), "utf8"),
@@ -165,7 +165,27 @@ test("generated functions consume readiness and the next fetch exits", async () 
   })(context);
   const result = await fetcher.createIssueAndPrFetcher({
     fetch: async (url) => {
-      assert(!url.includes("/comments"));
+      const { pathname } = new URL(url);
+      if (pathname === "/user") return reply({ id: 9 });
+      if (pathname.endsWith("/issues/7/comments"))
+        return reply([{
+          id: 42,
+          user: { id: 9 },
+          body: '<!-- relayfold:issue-to-pr {"pr":12,"handled":[]} -->',
+        }]);
+      if (pathname.endsWith("/pulls/12"))
+        return reply({
+          number: 12,
+          title: "Fix",
+          html_url: "https://github.com/example/service/pull/12",
+          state: "open",
+          head: { ref: "fix", repo: { full_name: "example/service" } },
+        });
+      if (pathname.endsWith("/issues/12/comments"))
+        return reply([{ id: 1, body: "Please add a test", author_association: "MEMBER" }]);
+      if (pathname.endsWith("/pulls/12/comments") || pathname.endsWith("/pulls/12/reviews"))
+        return reply([]);
+      assert(pathname.endsWith("/issues/7"));
       return reply({
         number: 7,
         title: "Fix",
@@ -175,7 +195,8 @@ test("generated functions consume readiness and the next fetch exits", async () 
       });
     },
   })({ ...context, inputs: [issue] });
-  assert.match(result._workflow_exit_reason, /agent-ready/);
+  assert.equal(result.pr.pr_number, 12);
+  assert.deepEqual(result.feedback.map(({ id }) => id), ["discussion:1"]);
   assert.deepEqual(labels, [{ name: "bug" }, { name: marker }]);
 });
 
